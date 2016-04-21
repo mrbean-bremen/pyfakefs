@@ -104,15 +104,23 @@ def path_exists(path):
     return os.path.exists(path)
 
 def get_glob(glob_path):
-    '''Return the list of paths matching the specified glob expression.
+    r'''Return the list of paths matching the specified glob expression.
 
     For example:
 
     >>> os.mkdir('/test')
     >>> create_file('/test/file1.txt')
     >>> create_file('/test/file2.txt')
-    >>> get_glob('/test/file*.txt')
-    ['/test/file1.txt', '/test/file2.txt']
+    >>> file_names = get_glob('/test/file*.txt')
+    >>>
+    >>> import sys
+    >>> if sys.platform.startswith('win'):
+    ...     # Windows style path
+    ...     file_names == [r'\test\file1.txt', r'\test\file2.txt']
+    ... else:
+    ...     # UNIX style path
+    ...     file_names == ['/test/file1.txt', '/test/file2.txt']
+    True
     '''
     return glob.glob(glob_path)
 

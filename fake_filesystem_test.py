@@ -22,7 +22,6 @@ import re
 import stat
 import sys
 import time
-import binascii
 if sys.version_info < (2, 7):
     import unittest2 as unittest
 else:
@@ -485,6 +484,51 @@ class FakeFilesystemUnitTest(TestCase):
     self.assertRaises(IOError, self.filesystem.LResolveObject, 'not_a_dir/foo')
     self.assertRaises(IOError, self.filesystem.LResolveObject,
                       'not_a_dir/foo/bar')
+
+
+class CaseInsensitiveFakeFilesystemTest(TestCase):
+  def setUp(self):
+    self.filesystem = fake_filesystem.FakeFilesystem(path_separator='/')
+    self.filesystem.is_case_sensitive = False
+    self.os = fake_filesystem.FakeOsModule(self.filesystem)
+    self.path = self.os.path
+
+  def testGetObject(self):
+    self.filesystem.CreateDirectory('/foo/bar')
+    self.filesystem.CreateFile('/foo/bar/baz')
+    self.assertTrue(self.filesystem.GetObject('/Foo/Bar/Baz'))
+
+  def testRemoveObject(self):
+    self.filesystem.CreateDirectory('/foo/bar')
+    self.filesystem.CreateFile('/foo/bar/baz')
+    self.filesystem.RemoveObject('/Foo/Bar/Baz')
+    self.assertFalse(self.filesystem.Exists('/foo/bar/baz'))
+
+  def testExists(self):
+    self.filesystem.CreateDirectory('/Foo/Bar')
+    self.assertTrue(self.filesystem.Exists('/Foo/Bar'))
+    self.assertTrue(self.filesystem.Exists('/foo/bar'))
+
+    self.filesystem.CreateFile('/foo/Bar/baz')
+    self.assertTrue(self.filesystem.Exists('/Foo/bar/BAZ'))
+    self.assertTrue(self.filesystem.Exists('/foo/bar/baz'))
+
+  def testIsdirIsfile(self):
+    self.filesystem.CreateFile('foo/bar')
+    self.assertTrue(self.path.isdir('Foo'))
+    self.assertFalse(self.path.isfile('Foo'))
+    self.assertTrue(self.path.isfile('Foo/Bar'))
+    self.assertFalse(self.path.isdir('Foo/Bar'))
+
+  def testGetsize(self):
+    file_path = 'foo/bar/baz'
+    self.filesystem.CreateFile(file_path, contents='1234567')
+    self.assertEqual(7, self.path.getsize('FOO/BAR/BAZ'))
+
+  def testGetMtime(self):
+    test_file = self.filesystem.CreateFile('foo/bar1.txt')
+    test_file.SetMTime(24)
+    self.assertEqual(24, self.path.getmtime('Foo/Bar1.TXT'))
 
 
 class FakeOsModuleTest(TestCase):
@@ -1184,13 +1228,54 @@ class FakeOsModuleTest(TestCase):
     directory = '/a/b'
     self.assertRaises(Exception, self.os.makedirs, directory)
 
+  # test fsync and fdatasync
+
+  def testFsyncRaisesOnNonInt(self):
+    self.assertRaises(TypeError, self.os.fsync, "zero")
+
+  def testFdatasyncRaisesOnNonInt(self):
+    self.assertRaises(TypeError, self.os.fdatasync, "zero")
+
+  def testFsyncRaisesOnInvalidFd(self):
+    # No open files yet, so even 0 is invalid
+    self.assertRaises(OSError, self.os.fsync, 0)
+
+  def testFdatasyncRaisesOnInvalidFd(self):
+    # No open files yet, so even 0 is invalid
+    self.assertRaises(OSError, self.os.fdatasync, 0)
+
+  def testFsyncPass(self):
+    # setup
+    fake_open = fake_filesystem.FakeFileOpen(self.filesystem)
+    test_file_path = 'test_file'
+    self.filesystem.CreateFile(test_file_path, contents='dummy file contents')
+    test_file = fake_open(test_file_path, 'r')
+    test_fd = test_file.fileno()
+    # Test that this doesn't raise anything
+    self.os.fsync(test_fd)
+    # And just for sanity, double-check that this still raises
+    self.assertRaises(OSError, self.os.fsync, test_fd+1)
+
+  def testFdatasyncPass(self):
+    # setup
+    fake_open = fake_filesystem.FakeFileOpen(self.filesystem)
+    test_file_path = 'test_file'
+    self.filesystem.CreateFile(test_file_path, contents='dummy file contents')
+    test_file = fake_open(test_file_path, 'r')
+    test_fd = test_file.fileno()
+    # Test that this doesn't raise anything
+    self.os.fdatasync(test_fd)
+    # And just for sanity, double-check that this still raises
+    self.assertRaises(OSError, self.os.fdatasync, test_fd+1)
+
   def _CreateTestFile(self, path):
-    self.filesystem.CreateFile(path)
+    test_file = self.filesystem.CreateFile(path)
     self.assertTrue(self.filesystem.Exists(path))
     st = self.os.stat(path)
     self.assertEqual(0o666, stat.S_IMODE(st.st_mode))
     self.assertTrue(st.st_mode & stat.S_IFREG)
     self.assertFalse(st.st_mode & stat.S_IFDIR)
+    return test_file
 
   def _CreateTestDirectory(self, path):
     self.filesystem.CreateDirectory(path)
@@ -1316,20 +1401,63 @@ class FakeOsModuleTest(TestCase):
 
   def testUtimeSetsCurrentTimeIfArgsIsNoneWithFloats(self):
     # set up
-    # time.time can report back floats, but it should be converted to ints
-    # since atime/ctime/mtime are all defined as seconds since epoch.
-    time.time = _GetDummyTime(200.0123, 20)
+    # we set os.stat_float_times() to False, so atime/ctime/mtime
+    # are converted as ints (seconds since epoch)
+    time.time = _GetDummyTime(200.9123, 20)
     path = '/some_file'
+    fake_filesystem.FakeOsModule.stat_float_times(False)
     self._CreateTestFile(path)
     st = self.os.stat(path)
     # 200 is the current time established above (if converted to int).
     self.assertEqual(200, st.st_atime)
+    self.assertTrue(isinstance(st.st_atime, int))
     self.assertEqual(200, st.st_mtime)
+    self.assertTrue(isinstance(st.st_mtime, int))
     # actual tests
     self.os.utime(path, None)
     st = self.os.stat(path)
     self.assertEqual(220, st.st_atime)
+    self.assertTrue(isinstance(st.st_atime, int))
     self.assertEqual(240, st.st_mtime)
+    self.assertTrue(isinstance(st.st_mtime, int))
+
+  def testUtimeSetsCurrentTimeIfArgsIsNoneWithFloatsNSec(self):
+    self.filesystem = fake_filesystem.FakeFilesystem(path_separator='/')
+    self.os = fake_filesystem.FakeOsModule(self.filesystem)
+    self.assertTrue(not self.os.stat_float_times())
+
+    time.time = _GetDummyTime(200.9123, 20)
+    path = '/some_file'
+    test_file = self._CreateTestFile(path)
+
+    st = self.os.stat(path)
+    self.assertEqual(200, st.st_ctime)
+    self.assertEqual(200, test_file.st_ctime)
+    self.assertTrue(isinstance(st.st_ctime, int))
+    self.assertTrue(isinstance(test_file.st_ctime, int))
+
+    self.os.stat_float_times(True) # first time float time
+    self.assertEqual(200, st.st_ctime) # st does not change
+    self.assertEqual(200.9123, test_file.st_ctime) # but the file does
+    self.assertTrue(isinstance(st.st_ctime, int))
+    self.assertTrue(isinstance(test_file.st_ctime, float))
+
+    self.os.stat_float_times(False) # reverting to int
+    self.assertEqual(200, test_file.st_ctime)
+    self.assertTrue(isinstance(test_file.st_ctime, int))
+
+    self.assertEqual(200, st.st_ctime)
+    self.assertTrue(isinstance(st.st_ctime, int))
+
+    self.os.stat_float_times(True)
+    st = self.os.stat(path)
+    # 200.9123 not converted to int
+    self.assertEqual(200.9123, test_file.st_atime, test_file.st_mtime)
+    self.assertEqual(200.9123, st.st_atime, st.st_mtime)
+    self.os.utime(path, None)
+    st = self.os.stat(path)
+    self.assertEqual(220.9123, st.st_atime)
+    self.assertEqual(240.9123, st.st_mtime)
 
   def testUtimeSetsSpecifiedTime(self):
     # set up
@@ -2003,6 +2131,56 @@ class FakePathModuleTest(TestCase):
                 ('/foo/bar/xyzzy', 'plugh')]
     self.assertEqual(expected, visited_nodes)
 
+  def testWalkFollowsymlinkDisabled(self):
+    self.filesystem.CreateFile('/linkerStrinkter/sublink/')
+    self.filesystem.CreateFile('/foo/bar/baz')
+    self.filesystem.CreateFile('/foo/bar/xyzzy/plugh')
+    self.filesystem.CreateLink('/foo/linkedMeh', '/linkerStrinkter')
+
+    visited_nodes = []
+    for root, dirs, files in self.os.walk('/foo', followlinks=False):
+      for dir in dirs:
+       visited_nodes.append(self.os.path.join(root, dir))
+      for file in files:
+        visited_nodes.append(self.os.path.join(root, file))
+    expected = ['/foo/bar', '/foo/linkedMeh', '/foo/bar/xyzzy', '/foo/bar/baz', '/foo/bar/xyzzy/plugh']
+    self.assertEqual(expected, visited_nodes)
+
+    visited_nodes = []
+    for root, dirs, files in self.os.walk('/foo/created_link', followlinks=True):
+      for dir in dirs:
+       visited_nodes.append(self.os.path.join(root, dir))
+      for file in files:
+       visited_nodes.append(self.os.path.join(root, file))
+    expected = []
+    self.assertEqual(expected, visited_nodes)
+
+
+  def testWalkFollowsymlinkEnabled(self):
+    self.filesystem.CreateFile('/linked/subfile')
+    self.filesystem.CreateFile('/foo/bar/baz')
+    self.filesystem.CreateFile('/foo/bar/xyzzy/plugh')
+    self.filesystem.CreateLink('/foo/created_link', '/linked')
+
+    visited_nodes = []
+    for root, dirs, files in self.os.walk('/foo', followlinks=True):
+      for dir in dirs:
+       visited_nodes.append(self.os.path.join(root, dir))
+      for file in files:
+       visited_nodes.append(self.os.path.join(root, file))
+    expected = ['/foo/bar',  '/foo/created_link', '/foo/bar/xyzzy', '/foo/bar/baz', '/foo/bar/xyzzy/plugh',
+                '/foo/created_link/subfile']
+    self.assertEqual(expected, visited_nodes)
+
+    visited_nodes = []
+    for root, dirs, files in self.os.walk('/foo/created_link', followlinks=True):
+      for dir in dirs:
+       visited_nodes.append(self.os.path.join(root, dir))
+      for file in files:
+       visited_nodes.append(self.os.path.join(root, file))
+    expected = ['/foo/created_link/subfile']
+    self.assertEqual(expected, visited_nodes)
+
   @unittest.skipIf(sys.version_info >= (3, 0) or TestCase.is_windows,
                    'os.path.walk deprecrated in Python 3, cannot be properly '
                    'tested in win32')
@@ -2014,6 +2192,23 @@ class FakePathModuleTest(TestCase):
 
     self.path.walk('/foo', RecordVisitedNodes, visited_nodes)
     self.assertEqual([], visited_nodes)
+
+  def testGetattrForwardToRealOsPath(self):
+    """Forwards any non-faked calls to os.path."""
+    self.assertTrue(hasattr(self.path, 'sep'), 'Get a faked os.path function')
+    private_path_function = None
+    if (2, 7) <= sys.version_info < (3, 6):
+      if self.is_windows:
+        if sys.version_info >= (3, 0):
+          private_path_function = '_get_bothseps'
+        else:
+          private_path_function = '_abspath_split'
+      else:
+        private_path_function = '_joinrealpath'
+    if private_path_function:
+      self.assertTrue(hasattr(self.path, private_path_function),
+                     'Get a real os.path function not implemented in fake os.path')
+    self.assertFalse(hasattr(self.path, 'nonexistent'))
 
 
 class FakeFileOpenTestBase(TestCase):
@@ -2357,24 +2552,41 @@ class FakeFileOpenTest(FakeFileOpenTestBase):
     self.assertFalse(self.filesystem.Exists(file_path))
     # tests
     fake_file = self.file(file_path, 'w')
+    st = self.os.stat(file_path)
+    self.assertEqual(100, st.st_ctime, st.st_mtime)
     fake_file.close()
     st = self.os.stat(file_path)
-    self.assertEqual(100, st.st_ctime)
+    self.assertEqual(110, st.st_ctime, st.st_mtime)
 
     fake_file = self.file(file_path, 'w')
+    st = self.os.stat(file_path)
+    # truncating the file cause an additional stat update
+    self.assertEqual(120, st.st_ctime, st.st_mtime)
     fake_file.close()
     st = self.os.stat(file_path)
-    self.assertEqual(110, st.st_ctime)
+    self.assertEqual(130, st.st_ctime, st.st_mtime)
 
     fake_file = self.file(file_path, 'w+')
+    st = self.os.stat(file_path)
+    self.assertEqual(140, st.st_ctime, st.st_mtime)
     fake_file.close()
     st = self.os.stat(file_path)
-    self.assertEqual(120, st.st_ctime)
+    self.assertEqual(150, st.st_ctime, st.st_mtime)
+
+    fake_file = self.file(file_path, 'a')
+    st = self.os.stat(file_path)
+    # not updating m_time or c_time here, since no truncating.
+    self.assertEqual(150, st.st_ctime, st.st_mtime)
+    fake_file.close()
+    st = self.os.stat(file_path)
+    self.assertEqual(160, st.st_ctime, st.st_mtime)
 
     fake_file = self.file(file_path, 'r')
+    st = self.os.stat(file_path)
+    self.assertEqual(160, st.st_ctime, st.st_mtime)
     fake_file.close()
     st = self.os.stat(file_path)
-    self.assertEqual(120, st.st_ctime)
+    self.assertEqual(160, st.st_ctime, st.st_mtime)
 
   def _CreateWithPermission(self, file_path, perm_bits):
     self.filesystem.CreateFile(file_path)
@@ -2565,7 +2777,7 @@ class FakeFileOpenTest(FakeFileOpenTestBase):
 
   def testCanReadFromBlockDevice(self):
     device_path = 'device'
-    self.filesystem.CreateFile(device_path, stat.S_IFBLK 
+    self.filesystem.CreateFile(device_path, stat.S_IFBLK
                                |fake_filesystem.PERM_ALL)
     with self.open(device_path, 'r') as fh:
       self.assertEqual('', fh.read())
@@ -3004,5 +3216,147 @@ class PathSeparatorTest(TestCase):
     self.assertEqual('!', fake_os.path.sep)
 
 
+class AlternativePathSeparatorTest(TestCase):
+  def setUp(self):
+    self.filesystem = fake_filesystem.FakeFilesystem(path_separator='!')
+    self.filesystem.alternative_path_separator = '?'
+
+  def testInitialValue(self):
+    filesystem = fake_filesystem.FakeFilesystem()
+    if self.is_windows:
+      self.assertEqual('/', filesystem.alternative_path_separator)
+    else:
+      self.assertIsNone(filesystem.alternative_path_separator)
+
+    filesystem = fake_filesystem.FakeFilesystem(path_separator='/')
+    self.assertIsNone(filesystem.alternative_path_separator)
+
+  def testAltSep(self):
+    fake_os = fake_filesystem.FakeOsModule(self.filesystem)
+    self.assertEqual('?', fake_os.altsep)
+    self.assertEqual('?', fake_os.path.altsep)
+
+  def testCollapsePathWithMixedSeparators(self):
+    self.assertEqual('!foo!bar', self.filesystem.CollapsePath('!foo??bar'))
+
+  def testNormalizePathWithMixedSeparators(self):
+    path = 'foo?..?bar'
+    self.assertEqual('!bar', self.filesystem.NormalizePath(path))
+
+  def testExistsWithMixedSeparators(self):
+    self.filesystem.CreateFile('?foo?bar?baz')
+    self.filesystem.CreateFile('!foo!bar!xyzzy!plugh')
+    self.assertTrue(self.filesystem.Exists('!foo!bar!baz'))
+    self.assertTrue(self.filesystem.Exists('?foo?bar?xyzzy?plugh'))
+
+
+class DriveLetterSupportTest(TestCase):
+  def setUp(self):
+    self.filesystem = fake_filesystem.FakeFilesystem(path_separator='/')
+    self.filesystem.supports_drive_letter = True
+
+  def testInitialValue(self):
+    filesystem = fake_filesystem.FakeFilesystem()
+    if self.is_windows:
+      self.assertTrue(filesystem.supports_drive_letter)
+    else:
+      self.assertFalse(filesystem.supports_drive_letter)
+
+  def testCollapsePath(self):
+    self.assertEqual('c:/foo/bar', self.filesystem.CollapsePath('c://foo//bar'))
+
+  def testNormalizePath(self):
+    self.assertEqual('c:/foo/bar', self.filesystem.NormalizePath('c:/foo//bar'))
+    self.filesystem.cwd = 'c:/foo'
+    self.assertEqual('c:/foo/bar', self.filesystem.NormalizePath('bar'))
+
+  def testSplitPath(self):
+    self.assertEqual(('c:/foo', 'bar'), self.filesystem.SplitPath('c:/foo/bar'))
+
+  def testCharactersBeforeRootIgnoredInJoinPaths(self):
+    self.assertEqual('c:/d', self.filesystem.JoinPaths('b', 'c:', 'd'))
+
+  def testResolvePath(self):
+    self.assertEqual('c:/foo/bar', self.filesystem.ResolvePath('c:/foo/bar'))
+
+
+class DiskSpaceTest(TestCase):
+  def setUp(self):
+    self.filesystem = fake_filesystem.FakeFilesystem(path_separator='/', total_size=100)
+
+  def testFileSystemSizeAfterLargeFileCreation(self):
+    filesystem = fake_filesystem.FakeFilesystem(path_separator='/', total_size=1024*1024*1024*100)
+    filesystem.CreateFile('/foo/baz', st_size=1024*1024*1024*10)
+    self.assertEqual((1024*1024*1024*100,
+                      1024*1024*1024*10,
+                      1024*1024*1024*90), filesystem.GetDiskUsage())
+
+  def testFileSystemSizeAfterBinaryFileCreation(self):
+    self.filesystem.CreateFile('/foo/bar', contents=b'xyzzy')
+    self.assertEqual((100, 5, 95), self.filesystem.GetDiskUsage())
+
+  def testFileSystemSizeAfterAsciiStringFileCreation(self):
+    self.filesystem.CreateFile('/foo/bar', contents='complicated')
+    self.assertEqual((100, 11, 89), self.filesystem.GetDiskUsage())
+
+  def testFileSystemSizeAfter2ByteUnicodeStringFileCreation(self):
+    self.filesystem.CreateFile('/foo/bar', contents='сложно')
+    self.assertEqual((100, 12, 88), self.filesystem.GetDiskUsage())
+
+  def testFileSystemSizeAfter3ByteUnicodeStringFileCreation(self):
+    self.filesystem.CreateFile('/foo/bar', contents='複雑')
+    self.assertEqual((100, 6, 94), self.filesystem.GetDiskUsage())
+
+  def testFileSystemSizeAfterFileDeletion(self):
+    self.filesystem.CreateFile('/foo/bar', contents=b'xyzzy')
+    self.filesystem.CreateFile('/foo/baz', st_size=20)
+    self.filesystem.RemoveObject('/foo/bar')
+    self.assertEqual((100, 20, 80), self.filesystem.GetDiskUsage())
+
+  def testFileSystemSizeAfterDirectoryRemoval(self):
+    self.filesystem.CreateFile('/foo/bar', st_size=10)
+    self.filesystem.CreateFile('/foo/baz', st_size=20)
+    self.filesystem.CreateFile('/foo1/bar', st_size=40)
+    self.filesystem.RemoveObject('/foo')
+    self.assertEqual((100, 40, 60), self.filesystem.GetDiskUsage())
+
+  def testCreatingFileWithFittingContent(self):
+    try:
+      self.filesystem.CreateFile('/foo/bar', contents=b'a'*100)
+    except IOError:
+      self.fail('File with contents fitting into disk space could not be written.')
+
+  def testCreatingFileWithContentTooLarge(self):
+      def create_large_file():
+        self.filesystem.CreateFile('/foo/bar', contents=b'a'*101)
+
+      self.assertRaises(IOError, create_large_file)
+
+  def testCreatingFileWithFittingSize(self):
+    try:
+      self.filesystem.CreateFile('/foo/bar', st_size=100)
+    except IOError:
+      self.fail('File with size fitting into disk space could not be written.')
+
+  def testCreatingFileWithSizeTooLarge(self):
+      def create_large_file():
+        self.filesystem.CreateFile('/foo/bar', st_size=101)
+
+      self.assertRaises(IOError, create_large_file)
+
+  def testResizeFileWithFittingSize(self):
+    file_object = self.filesystem.CreateFile('/foo/bar', st_size=50)
+    try:
+      file_object.SetLargeFileSize(100)
+      file_object.SetContents(b'a'*100)
+    except IOError:
+      self.fail('Resizing file failed although disk space was sufficient.')
+
+  def testResizeFileWithSizeTooLarge(self):
+    file_object = self.filesystem.CreateFile('/foo/bar', st_size=50)
+    self.assertRaises(IOError, lambda: file_object.SetLargeFileSize(200))
+    self.assertRaises(IOError, lambda: file_object.SetContents('a'*150))
+
+
 if __name__ == '__main__':
-  main()
+  unittest.main()

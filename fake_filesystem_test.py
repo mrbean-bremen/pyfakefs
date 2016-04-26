@@ -1965,6 +1965,19 @@ class FakePathModuleTest(TestCase):
     self.assertEqual(self.path.join(basedir, file_components[1]),
                      self.path.abspath(file_components[1]))
 
+  def testAbsPathWithDriveComponent(self):
+    self.filesystem.supports_drive_letter = True
+    self.filesystem.cwd = 'C:/foo'
+    self.assertEqual('C:/foo/bar', self.path.abspath('bar'))
+    self.assertEqual('C:/foo/bar', self.path.abspath('C:bar'))
+    self.assertEqual('C:/foo/bar', self.path.abspath('/foo/bar'))
+
+  def testIsabsWithDriveComponent(self):
+    self.filesystem.supports_drive_letter = False
+    self.assertFalse(self.path.isabs('C:/foo'))
+    self.filesystem.supports_drive_letter = True
+    self.assertTrue(self.path.isabs('C:/foo'))
+
   def testRelpath(self):
     path_foo = '/path/to/foo'
     path_bar = '/path/to/bar'
@@ -3122,9 +3135,10 @@ class CollapsePathPipeSeparatorTest(PathManipulationTests):
 
   def testIgnoresUpLevelReferencesStartingFromRoot(self):
     self.assertEqual('|', self.filesystem.CollapsePath('|..|..|..|'))
-    self.assertEqual('|', self.filesystem.CollapsePath('||..|.|..||'))
     self.assertEqual(
         '|', self.filesystem.CollapsePath('|..|..|foo|bar|..|..|'))
+    self.filesystem.supports_drive_letter = False  # shall not be handled as UNC path
+    self.assertEqual('|', self.filesystem.CollapsePath('||..|.|..||'))
 
   def testConservesUpLevelReferencesStartingFromCurrentDirectory(self):
     self.assertEqual(
@@ -3265,6 +3279,10 @@ class DriveLetterSupportTest(TestCase):
   def testCollapsePath(self):
     self.assertEqual('c:/foo/bar', self.filesystem.CollapsePath('c://foo//bar'))
 
+  @unittest.skipIf(sys.version_info < (2, 7, 8), 'UNC path support since Python 2.7.8')
+  def testCollapseUncPath(self):
+    self.assertEqual('//foo/bar/baz', self.filesystem.CollapsePath('//foo/bar//baz//'))
+
   def testNormalizePath(self):
     self.assertEqual('c:/foo/bar', self.filesystem.NormalizePath('c:/foo//bar'))
     self.filesystem.cwd = 'c:/foo'
@@ -3274,15 +3292,33 @@ class DriveLetterSupportTest(TestCase):
     self.assertEqual(('c:/foo', 'bar'), self.filesystem.SplitPath('c:/foo/bar'))
 
   def testCharactersBeforeRootIgnoredInJoinPaths(self):
-    self.assertEqual('c:/d', self.filesystem.JoinPaths('b', 'c:', 'd'))
+    self.assertEqual('c:d', self.filesystem.JoinPaths('b', 'c:', 'd'))
 
   def testResolvePath(self):
     self.assertEqual('c:/foo/bar', self.filesystem.ResolvePath('c:/foo/bar'))
+
+  def testGetPathComponents(self):
+    self.assertEqual(['c:', 'foo', 'bar'], self.filesystem.GetPathComponents('c:/foo/bar'))
+    self.assertEqual(['c:'], self.filesystem.GetPathComponents('c:'))
+
+  def testSplitDrive(self):
+    self.assertEqual(('c:', '/foo/bar'), self.filesystem.SplitDrive('c:/foo/bar'))
+    self.assertEqual(('', '/foo/bar'), self.filesystem.SplitDrive('/foo/bar'))
+    self.assertEqual(('c:', 'foo/bar'), self.filesystem.SplitDrive('c:foo/bar'))
+    self.assertEqual(('', 'foo/bar'), self.filesystem.SplitDrive('foo/bar'))
+
+  @unittest.skipIf(sys.version_info < (2, 7, 8), 'UNC path support since Python 2.7.8')
+  def testSplitDriveWithUncPath(self):
+    self.assertEqual(('//foo/bar', '/baz'), self.filesystem.SplitDrive('//foo/bar/baz'))
+    self.assertEqual(('', '//foo'), self.filesystem.SplitDrive('//foo'))
+    self.assertEqual(('', '//foo//bar'), self.filesystem.SplitDrive('//foo//bar'))
+    self.assertEqual(('//foo/bar', '//'), self.filesystem.SplitDrive('//foo/bar//'))
 
 
 class DiskSpaceTest(TestCase):
   def setUp(self):
     self.filesystem = fake_filesystem.FakeFilesystem(path_separator='/', total_size=100)
+    self.os = fake_filesystem.FakeOsModule(self.filesystem)
 
   def testFileSystemSizeAfterLargeFileCreation(self):
     filesystem = fake_filesystem.FakeFilesystem(path_separator='/', total_size=1024*1024*1024*100)
@@ -3356,6 +3392,16 @@ class DiskSpaceTest(TestCase):
     file_object = self.filesystem.CreateFile('/foo/bar', st_size=50)
     self.assertRaises(IOError, lambda: file_object.SetLargeFileSize(200))
     self.assertRaises(IOError, lambda: file_object.SetContents('a'*150))
+
+  def testFileSystemSizeAfterDirectoryRename(self):
+    self.filesystem.CreateFile('/foo/bar', st_size=20)
+    self.os.rename('/foo', '/baz')
+    self.assertEqual(20, self.filesystem.GetDiskUsage().used)
+
+  def testFileSystemSizeAfterFileRename(self):
+    self.filesystem.CreateFile('/foo/bar', st_size=20)
+    self.os.rename('/foo/bar', '/foo/baz')
+    self.assertEqual(20, self.filesystem.GetDiskUsage().used)
 
 
 if __name__ == '__main__':

@@ -25,6 +25,9 @@ import shutil
 import tempfile
 import sys
 
+if sys.version_info >= (3, 4):
+    import pathlib
+
 if sys.version_info < (2, 7):
     import unittest2 as unittest
 else:
@@ -32,9 +35,7 @@ else:
 from pyfakefs import fake_filesystem_unittest
 
 
-class TestPyfakefsUnittest(fake_filesystem_unittest.TestCase):  # pylint: disable=R0904
-    """Test the pyfakefs.fake_filesystem_unittest.TestCase` base class."""
-
+class TestPyfakefsUnittestBase(fake_filesystem_unittest.TestCase):
     def setUp(self):
         """Set up the fake file system"""
         self.setUpPyfakefs()
@@ -42,6 +43,10 @@ class TestPyfakefsUnittest(fake_filesystem_unittest.TestCase):  # pylint: disabl
     def tearDown(self):
         """Tear down the fake file system"""
         self.tearDownPyfakefs()
+
+
+class TestPyfakefsUnittest(TestPyfakefsUnittestBase):  # pylint: disable=R0904
+    """Test the pyfakefs.fake_filesystem_unittest.TestCase` base class."""
 
     @unittest.skipIf(sys.version_info > (2,), "file() was removed in Python 3")
     def test_file(self):
@@ -125,11 +130,21 @@ class TestPyfakefsUnittest(fake_filesystem_unittest.TestCase):  # pylint: disabl
             with open('%s/fake_file.txt' % td, 'w') as f:
                 self.assertTrue(self.fs.Exists(td))
 
+    @unittest.skipIf(sys.version_info < (3, 4), "pathlib new in Python 3.4")
+    def test_fakepathlib(self):
+        with pathlib.Path('/fake_file.txt') as p:
+            with p.open('w') as f:
+                f.write('text')
+        is_windows = sys.platform.startswith('win')
+        if is_windows:
+            self.assertTrue(self.fs.Exists(r'\fake_file.txt'))
+        else:
+            self.assertTrue(self.fs.Exists('/fake_file.txt'))
 
 import math as path
 
 
-class TestPatchPathUnittestFailing(TestPyfakefsUnittest):
+class TestPatchPathUnittestFailing(TestPyfakefsUnittestBase):
     """Tests the default behavior regarding the argument patch_path:
        An own path module (in this case an alias to math) cannot be imported,
        because it is faked by FakePathModule
@@ -143,7 +158,7 @@ class TestPatchPathUnittestFailing(TestPyfakefsUnittest):
         self.assertEqual(2, path.floor(2.5))
 
 
-class TestPatchPathUnittestPassing(TestPyfakefsUnittest):
+class TestPatchPathUnittestPassing(TestPyfakefsUnittestBase):
     """Tests the behavior with patch_path set to False:
        An own path module (in this case an alias to math) can be imported and used
     """

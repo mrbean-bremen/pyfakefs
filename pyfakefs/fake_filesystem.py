@@ -179,7 +179,7 @@ class FakeFile(object):
         Args:
           name:  name of the file/directory, without parent path information
           st_mode:  the stat.S_IF* constant representing the file type (i.e.
-            stat.S_IFREG, stat.SIFDIR)
+            stat.S_IFREG, stat.S_IFDIR)
           contents:  the contents of the filesystem object; should be a string or byte object for
             regular files, and a list of other FakeFile or FakeDirectory objects
             for FakeDirectory objects

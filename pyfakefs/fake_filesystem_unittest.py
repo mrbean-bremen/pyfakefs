@@ -136,9 +136,13 @@ class Patcher(object):
     '''
     assert None in SKIPMODULES, "sys.modules contains 'None' values; must skip them."
 
+    HAS_PATHLIB = sys.version_info >= (3, 4)
+
     # To add py.test support per issue https://github.com/jmcgeheeiv/pyfakefs/issues/43,
     # it appears that adding  'py', 'pytest', '_pytest' to SKIPNAMES will help
-    SKIPNAMES = set(['os', 'path', 'tempfile', 'io', 'pathlib'])
+    SKIPNAMES = set(['os', 'path', 'tempfile', 'io'])
+    if HAS_PATHLIB:
+        SKIPNAMES.add('pathlib')
 
     def __init__(self, additional_skip_names=None, patch_path=True):
         """For a description of the arguments, see TestCase.__init__"""
@@ -153,7 +157,8 @@ class Patcher(object):
         # Attributes set by _findModules()
         self._osModules = None
         self._pathModules = None
-        self._pathlibModules = None
+        if self.HAS_PATHLIB:
+            self._pathlibModules = None
         self._shutilModules = None
         self._tempfileModules = None
         self._ioModules = None
@@ -166,7 +171,8 @@ class Patcher(object):
         self.fs = None
         self.fake_os = None
         self.fake_path = None
-        self.fake_pathlib = None
+        if self.HAS_PATHLIB:
+            self.fake_pathlib = None
         self.fake_shutil = None
         self.fake_tempfile_ = None
         self.fake_open = None
@@ -185,7 +191,8 @@ class Patcher(object):
         """
         self._osModules = set()
         self._pathModules = set()
-        self._pathlibModules = set()
+        if self.HAS_PATHLIB:
+            self._pathlibModules = set()
         self._shutilModules = set()
         self._tempfileModules = set()
         self._ioModules = set()
@@ -198,7 +205,7 @@ class Patcher(object):
                 self._osModules.add(module)
             if self._patchPath and 'path' in module.__dict__:
                 self._pathModules.add(module)
-            if 'pathlib' in module.__dict__:
+            if self.HAS_PATHLIB and 'pathlib' in module.__dict__:
                 self._pathlibModules.add(module)
             if 'shutil' in module.__dict__:
                 self._shutilModules.add(module)
@@ -216,7 +223,7 @@ class Patcher(object):
         self.fs = fake_filesystem.FakeFilesystem()
         self.fake_os = fake_filesystem.FakeOsModule(self.fs)
         self.fake_path = self.fake_os.path
-        if sys.version_info >= (3, 4):
+        if self.HAS_PATHLIB:
             self.fake_pathlib = fake_pathlib.FakePathlibModule(self.fs)
         self.fake_shutil = fake_filesystem_shutil.FakeShutilModule(self.fs)
         self.fake_tempfile_ = fake_tempfile.FakeTempfileModule(self.fs)
@@ -243,8 +250,9 @@ class Patcher(object):
             self._stubs.SmartSet(module, 'os', self.fake_os)
         for module in self._pathModules:
             self._stubs.SmartSet(module, 'path', self.fake_path)
-        for module in self._pathlibModules:
-            self._stubs.SmartSet(module, 'pathlib', self.fake_pathlib)
+        if self.HAS_PATHLIB:
+            for module in self._pathlibModules:
+                self._stubs.SmartSet(module, 'pathlib', self.fake_pathlib)
         for module in self._shutilModules:
             self._stubs.SmartSet(module, 'shutil', self.fake_shutil)
         for module in self._tempfileModules:

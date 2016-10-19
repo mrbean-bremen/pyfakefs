@@ -255,11 +255,12 @@ class FakePath(pathlib.PurePath):
     def _raise_closed():
         raise ValueError("I/O operation on closed path")
 
-    def cwd(self):
+    @classmethod
+    def cwd(cls):
         """Return a new path pointing to the current working directory
         (as returned by os.getcwd()).
         """
-        return self.filesystem.cwd
+        return cls.filesystem.cwd
 
     @classmethod
     def home(cls):
@@ -285,14 +286,14 @@ class FakePath(pathlib.PurePath):
         """
         if self._closed:
             self._raise_closed()
-        # todo: move listdir impl to filesystem
-        # for name in self.filesystem.listdir(self):
-        #     if name in {'.', '..'}:
-        #         # Yielding a path object for these makes little sense
-        #         continue
-        #     yield self._make_child_relpath(name)
-        #     if self._closed:
-        #         self._raise_closed()
+            # todo: move listdir impl to filesystem
+            # for name in self.filesystem.listdir(self):
+            #     if name in {'.', '..'}:
+            #         # Yielding a path object for these makes little sense
+            #         continue
+            #     yield self._make_child_relpath(name)
+            #     if self._closed:
+            #         self._raise_closed()
 
     # def glob(self, pattern):
     #     """Iterate over this subtree and yield all existing files (of any
@@ -361,7 +362,7 @@ class FakePath(pathlib.PurePath):
         Return the result of the stat() system call on this path, like
         os.stat() does.
         """
-        return self.filesystem.stat(self)
+        return self.filesystem.GetStat(self._path())
 
     # def owner(self):
     #     """
@@ -465,14 +466,14 @@ class FakePath(pathlib.PurePath):
             #         self.parent.mkdir(parents=True)
             #         self._accessor.mkdir(self, mode)
 
-    # def chmod(self, mode):
-    #     """
-    #     Change the permissions of the path, like os.chmod().
-    #     """
-    #     if self._closed:
-    #         self._raise_closed()
-    #     self._accessor.chmod(self, mode)
-    #
+    def chmod(self, mode):
+        """
+        Change the permissions of the path, like os.chmod().
+        """
+        if self._closed:
+            self._raise_closed()
+        self.filesystem.ChangeMode(self._path(), mode)
+
     # def lchmod(self, mode):
     #     """
     #     Like chmod(), except if the path points to a symlink, the symlink's
@@ -506,7 +507,7 @@ class FakePath(pathlib.PurePath):
         """
         if self._closed:
             self._raise_closed()
-        return self.filesystem.lstat(self)
+        return self.filesystem.GetLStat(self._path())
 
     def rename(self, target):
         """
@@ -544,11 +545,20 @@ class FakePath(pathlib.PurePath):
         """
         Whether this path exists.
         """
-        return self.filesystem.ExistsFile(self._path())
+        return self.filesystem.Exists(self._path())
 
     def _is_type(self, st_flag):
         try:
             path_object = self.filesystem.ResolveObject(self._path())
+            if path_object:
+                return stat.S_IFMT(path_object.st_mode) == st_flag
+        except IOError:
+            return False
+        return False
+
+    def _is_ltype(self, st_flag):
+        try:
+            path_object = self.filesystem.LResolveObject(self._path())
             if path_object:
                 return stat.S_IFMT(path_object.st_mode) == st_flag
         except IOError:
@@ -572,42 +582,38 @@ class FakePath(pathlib.PurePath):
         """
         Whether this path is a symbolic link.
         """
-        return self._is_type(stat.S_ISLNK(self.lstat().st_mode))
+        return self._is_ltype(stat.S_IFLNK)
 
     def is_block_device(self):
         """
         Whether this path is a block device.
         """
-        return self._is_type(stat.S_ISBLK(self.lstat().st_mode))
+        return self._is_ltype(stat.S_IFBLK)
 
     def is_char_device(self):
         """
         Whether this path is a character device.
         """
-        return self._is_type(stat.S_ISCHR(self.stat().st_mode))
+        return self._is_type(stat.S_IFCHR)
 
     def is_fifo(self):
         """
         Whether this path is a FIFO.
         """
-        return self._is_type(stat.S_ISFIFO(self.stat().st_mode))
+        return self._is_type(stat.S_IFIFO)
 
     def is_socket(self):
         """
         Whether this path is a socket.
         """
-        return self._is_type(stat.S_ISSOCK(self.stat().st_mode))
+        return self._is_type(stat.S_IFSOCK)
 
     def expanduser(self):
         """ Return a new path with expanded ~ and ~user constructs
         (as returned by os.path.expanduser)
         """
-        # if (not (self._drv or self._root) and
-        #         self._parts and self._parts[0][:1] == '~'):
-        #     homedir = self._flavour.gethomedir(self._parts[0][1:])
-        #     return self._from_parts([homedir] + self._parts[1:])
-        #
-        return self
+        return FakePath(os.path.expanduser(self._path())
+                        .replace(os.path.sep, self.filesystem.path_separator))
 
 
 class FakePathlibModule(object):

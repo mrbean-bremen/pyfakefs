@@ -621,6 +621,66 @@ class FakeFilesystem(object):
                                   file_path)
             mount_point['used_size'] += usage_change
 
+    def _GetStat(self, entry_path, resolve):
+        try:
+            stats = resolve(entry_path)
+            st_obj = os.stat_result((stats.st_mode, stats.st_ino, stats.st_dev,
+                                     stats.st_nlink, stats.st_uid, stats.st_gid,
+                                     stats.st_size, stats.st_atime,
+                                     stats.st_mtime, stats.st_ctime))
+            return st_obj
+        except IOError as io_error:
+            raise OSError(io_error.errno, io_error.strerror, entry_path)
+
+    def GetStat(self, entry_path):
+        """Returns the os.stat-like tuple for the FakeFile object of entry_path.
+
+        Args:
+          entry_path:  path to filesystem object to retrieve
+
+        Returns:
+          the os.stat_result object corresponding to entry_path
+
+        Raises:
+          OSError: if the filesystem object doesn't exist.
+        """
+        # stat should return the tuple representing return value of os.stat
+        return self._GetStat(entry_path, self.ResolveObject)
+
+    def GetLStat(self, entry_path):
+        """Returns the os.stat-like tuple for entry_path, not following symlinks.
+
+        Args:
+          entry_path:  path to filesystem object to retrieve
+
+        Returns:
+          the os.stat_result object corresponding to entry_path
+
+        Raises:
+          OSError: if the filesystem object doesn't exist.
+        """
+        # stat should return the tuple representing return value of os.stat
+        return self._GetStat(entry_path, self.LResolveObject)
+
+    def ChangeMode(self, path, mode):
+        """Change the permissions of a file as encoded in integer mode.
+
+        Args:
+          path: (str) Path to the file.
+          mode: (int) Permissions
+        """
+        try:
+            file_object = self.GetObject(path)
+        except IOError as io_error:
+            if io_error.errno == errno.ENOENT:
+                raise OSError(errno.ENOENT,
+                              'No such file or directory in fake filesystem',
+                              path)
+            raise
+        file_object.st_mode = ((file_object.st_mode & ~PERM_ALL) |
+                               (mode & PERM_ALL))
+        file_object.st_ctime = time.time()
+
     def SetIno(self, path, st_ino):
         """Set the self.st_ino attribute of file at 'path'.
 
@@ -2164,16 +2224,7 @@ class FakeOsModule(object):
         Raises:
           OSError: if the filesystem object doesn't exist.
         """
-        # stat should return the tuple representing return value of os.stat
-        try:
-            stats = self.filesystem.ResolveObject(entry_path)
-            st_obj = os.stat_result((stats.st_mode, stats.st_ino, stats.st_dev,
-                                     stats.st_nlink, stats.st_uid, stats.st_gid,
-                                     stats.st_size, stats.st_atime,
-                                     stats.st_mtime, stats.st_ctime))
-            return st_obj
-        except IOError as io_error:
-            raise OSError(io_error.errno, io_error.strerror, entry_path)
+        return self.filesystem.GetStat(entry_path)
 
     def lstat(self, entry_path):
         """Returns the os.stat-like tuple for entry_path, not following symlinks.
@@ -2188,15 +2239,7 @@ class FakeOsModule(object):
           OSError: if the filesystem object doesn't exist.
         """
         # stat should return the tuple representing return value of os.stat
-        try:
-            stats = self.filesystem.LResolveObject(entry_path)
-            st_obj = os.stat_result((stats.st_mode, stats.st_ino, stats.st_dev,
-                                     stats.st_nlink, stats.st_uid, stats.st_gid,
-                                     stats.st_size, stats.st_atime,
-                                     stats.st_mtime, stats.st_ctime))
-            return st_obj
-        except IOError as io_error:
-            raise OSError(io_error.errno, io_error.strerror, entry_path)
+        return self.filesystem.GetLStat(entry_path)
 
     def remove(self, path):
         """Removes the FakeFile object representing the specified file."""
@@ -2368,17 +2411,7 @@ class FakeOsModule(object):
           path: (str) Path to the file.
           mode: (int) Permissions
         """
-        try:
-            file_object = self.filesystem.GetObject(path)
-        except IOError as io_error:
-            if io_error.errno == errno.ENOENT:
-                raise OSError(errno.ENOENT,
-                              'No such file or directory in fake filesystem',
-                              path)
-            raise
-        file_object.st_mode = ((file_object.st_mode & ~PERM_ALL) |
-                               (mode & PERM_ALL))
-        file_object.st_ctime = time.time()
+        self.filesystem.ChangeMode(path, mode)
 
     def utime(self, path, times):
         """Change the access and modified times of a file.

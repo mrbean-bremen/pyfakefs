@@ -1,4 +1,20 @@
-"""Tests for fake_pathlib."""
+#! /usr/bin/env python
+# -*- coding: utf-8 -*-
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Unittests for fake_pathlib."""
+
 import os
 import stat
 import unittest
@@ -170,21 +186,6 @@ class FakePathlibPathTest(unittest.TestCase):
         self.filesystem.cwd = '/home/jane'
         self.assertEqual(self.path.cwd(), '/home/jane')
 
-    def test_stat(self):
-        file_object = self.filesystem.CreateFile('/home/jane/test.py', st_size=20)
-
-        stat_result = self.path('/home/jane/test.py').stat()
-        self.assertFalse(stat_result[stat.ST_MODE] & stat.S_IFDIR)
-        self.assertTrue(stat_result[stat.ST_MODE] & stat.S_IFREG)
-        self.assertEqual(stat_result[stat.ST_INO], file_object.st_ino)
-        self.assertEqual(stat_result[stat.ST_SIZE], 20)
-        self.assertEqual(stat_result[stat.ST_MTIME], file_object.st_mtime)
-
-    def test_chmod(self):
-        file_object = self.filesystem.CreateFile('/home/jane/test.py', st_mode=stat.S_IFREG | 0o666)
-        self.path('/home/jane/test.py').chmod(0o444)
-        self.assertEqual(file_object.st_mode, stat.S_IFREG | 0o444)
-
     def test_exists(self):
         self.filesystem.CreateFile('/home/jane/test.py')
         self.filesystem.CreateDirectory('/home/john')
@@ -208,16 +209,16 @@ class FakePathlibPathTest(unittest.TestCase):
 
 class FakePathlibFileObjectProperrtyTest(unittest.TestCase):
     def setUp(self):
-        filesystem = fake_filesystem.FakeFilesystem(path_separator='/')
-        filesystem.supports_drive_letter = False
-        pathlib = fake_pathlib.FakePathlibModule(filesystem)
+        self.filesystem = fake_filesystem.FakeFilesystem(path_separator='/')
+        self.filesystem.supports_drive_letter = False
+        pathlib = fake_pathlib.FakePathlibModule(self.filesystem)
         self.path = pathlib.Path
-        filesystem.CreateFile('/home/jane/test.py')
-        filesystem.CreateDirectory('/home/john')
-        filesystem.CreateLink('/john', '/home/john')
-        filesystem.CreateLink('/test.py', '/home/jane/test.py')
-        filesystem.CreateLink('/broken_dir_link', '/home/none')
-        filesystem.CreateLink('/broken_file_link', '/home/none/test.py')
+        self.filesystem.CreateFile('/home/jane/test.py', st_size=100, st_mode=stat.S_IFREG | 0o666)
+        self.filesystem.CreateDirectory('/home/john')
+        self.filesystem.CreateLink('/john', '/home/john')
+        self.filesystem.CreateLink('/test.py', '/home/jane/test.py')
+        self.filesystem.CreateLink('/broken_dir_link', '/home/none')
+        self.filesystem.CreateLink('/broken_file_link', '/home/none/test.py')
 
     def test_exists(self):
         self.assertTrue(self.path('/home/jane/test.py').exists())
@@ -251,3 +252,100 @@ class FakePathlibFileObjectProperrtyTest(unittest.TestCase):
         self.assertTrue(self.path('/test.py').is_symlink())
         self.assertTrue(self.path('/broken_dir_link').is_symlink())
         self.assertTrue(self.path('/broken_file_link').is_symlink())
+
+    def test_stat(self):
+        file_object = self.filesystem.ResolveObject('/home/jane/test.py')
+
+        stat_result = self.path('/test.py').stat()
+        self.assertFalse(stat_result[stat.ST_MODE] & stat.S_IFDIR)
+        self.assertTrue(stat_result[stat.ST_MODE] & stat.S_IFREG)
+        self.assertEqual(stat_result[stat.ST_INO], file_object.st_ino)
+        self.assertEqual(stat_result[stat.ST_SIZE], 100)
+        self.assertEqual(stat_result[stat.ST_MTIME], file_object.st_mtime)
+
+    def test_lstat(self):
+        link_object = self.filesystem.LResolveObject('/test.py')
+
+        stat_result = self.path('/test.py').lstat()
+        self.assertTrue(stat_result[stat.ST_MODE] & stat.S_IFREG)
+        self.assertTrue(stat_result[stat.ST_MODE] & stat.S_IFLNK)
+        self.assertEqual(stat_result[stat.ST_INO], link_object.st_ino)
+        self.assertEqual(stat_result[stat.ST_SIZE], len('/home/jane/test.py'))
+        self.assertEqual(stat_result[stat.ST_MTIME], link_object.st_mtime)
+
+    def test_chmod(self):
+        file_object = self.filesystem.ResolveObject('/home/jane/test.py')
+        link_object = self.filesystem.LResolveObject('/test.py')
+        self.path('/test.py').chmod(0o444)
+        self.assertEqual(file_object.st_mode, stat.S_IFREG | 0o444)
+        self.assertEqual(link_object.st_mode, stat.S_IFLNK | 0o777)
+
+    def test_lchmod(self):
+        file_object = self.filesystem.ResolveObject('/home/jane/test.py')
+        link_object = self.filesystem.LResolveObject('/test.py')
+        self.path('/test.py').lchmod(0o444)
+        self.assertEqual(file_object.st_mode, stat.S_IFREG | 0o666)
+        self.assertEqual(link_object.st_mode, stat.S_IFLNK | 0o444)
+
+
+class FakePathlibPathFileOperationTest(unittest.TestCase):
+    """Tests some basic file handling. Mostly we can rely on the existing tests
+    for fake_filesystem methods, as most pathlib methods are just a wrapper around them.
+    """
+
+    def setUp(self):
+        self.filesystem = fake_filesystem.FakeFilesystem(path_separator='/')
+        self.filesystem.supports_drive_letter = False
+        self.filesystem.is_case_sensitive = True
+        pathlib = fake_pathlib.FakePathlibModule(self.filesystem)
+        self.path = pathlib.Path
+
+    def test_exists(self):
+        self.filesystem.CreateFile('/home/jane/test.py')
+        self.filesystem.CreateDirectory('/home/john')
+        self.filesystem.CreateLink('/john', '/home/john')
+        self.filesystem.CreateLink('/none', '/home/none')
+
+        self.assertTrue(self.path('/home/jane/test.py').exists())
+        self.assertTrue(self.path('/home/jane').exists())
+        self.assertTrue(self.path('/john').exists())
+        self.assertFalse(self.path('/none').exists())
+        self.assertFalse(self.path('/home/jane/test').exists())
+
+    def test_open(self):
+        self.filesystem.CreateDirectory('/foo')
+        self.assertRaises(OSError, self.path('/foo/bar.txt').open)
+        self.path('/foo/bar.txt').open('w')
+        self.assertTrue(self.filesystem.Exists('/foo/bar.txt'))
+
+    @unittest.skipIf(sys.version_info < (3, 5), 'New in version 3.5')
+    def test_read_text(self):
+        self.filesystem.CreateFile('text_file', contents='ерунда', encoding='cyrillic')
+        file_path = self.path('text_file')
+        self.assertEqual(file_path.read_text(encoding='cyrillic'), 'ерунда')
+
+    @unittest.skipIf(sys.version_info < (3, 5), 'New in version 3.5')
+    def test_write_text(self):
+        file_path = self.path('text_file')
+        file_path.write_text('ανοησίες', encoding='greek')
+        self.assertTrue(self.filesystem.Exists('text_file'))
+        file_object = self.filesystem.ResolveObject('text_file')
+        self.assertEqual(file_object.byte_contents.decode('greek'), 'ανοησίες')
+
+    @unittest.skipIf(sys.version_info < (3, 5), 'New in version 3.5')
+    def test_read_bytes(self):
+        self.filesystem.CreateFile('binary_file', contents=b'Binary file contents')
+        file_path = self.path('binary_file')
+        self.assertEqual(file_path.read_bytes(), b'Binary file contents')
+
+    @unittest.skipIf(sys.version_info < (3, 5), 'New in version 3.5')
+    def test_write_bytes(self):
+        file_path = self.path('binary_file')
+        file_path.write_bytes(b'Binary file contents')
+        self.assertTrue(self.filesystem.Exists('binary_file'))
+        file_object = self.filesystem.ResolveObject('binary_file')
+        self.assertEqual(file_object.byte_contents, b'Binary file contents')
+
+
+if __name__ == '__main__':
+    unittest.main()

@@ -621,8 +621,23 @@ class FakeFilesystem(object):
                                   file_path)
             mount_point['used_size'] += usage_change
 
-    def _GetStat(self, entry_path, resolve):
+    def GetStat(self, entry_path, follow_symlinks=True):
+        """Returns the os.stat-like tuple for the FakeFile object of entry_path.
+
+        Args:
+          entry_path:  path to filesystem object to retrieve
+          follow_symlinks: if False and entry_path points to a link, the link itself is inspected
+              instead of the linked object
+
+        Returns:
+          the os.stat_result object corresponding to entry_path
+
+        Raises:
+          OSError: if the filesystem object doesn't exist.
+        """
+        # stat should return the tuple representing return value of os.stat
         try:
+            resolve = self.ResolveObject if follow_symlinks else self.LResolveObject
             stats = resolve(entry_path)
             st_obj = os.stat_result((stats.st_mode, stats.st_ino, stats.st_dev,
                                      stats.st_nlink, stats.st_uid, stats.st_gid,
@@ -632,37 +647,7 @@ class FakeFilesystem(object):
         except IOError as io_error:
             raise OSError(io_error.errno, io_error.strerror, entry_path)
 
-    def GetStat(self, entry_path):
-        """Returns the os.stat-like tuple for the FakeFile object of entry_path.
-
-        Args:
-          entry_path:  path to filesystem object to retrieve
-
-        Returns:
-          the os.stat_result object corresponding to entry_path
-
-        Raises:
-          OSError: if the filesystem object doesn't exist.
-        """
-        # stat should return the tuple representing return value of os.stat
-        return self._GetStat(entry_path, self.ResolveObject)
-
-    def GetLStat(self, entry_path):
-        """Returns the os.stat-like tuple for entry_path, not following symlinks.
-
-        Args:
-          entry_path:  path to filesystem object to retrieve
-
-        Returns:
-          the os.stat_result object corresponding to entry_path
-
-        Raises:
-          OSError: if the filesystem object doesn't exist.
-        """
-        # stat should return the tuple representing return value of os.stat
-        return self._GetStat(entry_path, self.LResolveObject)
-
-    def ChangeMode(self, path, mode):
+    def ChangeMode(self, path, mode, follow_symlinks=True):
         """Change the permissions of a file as encoded in integer mode.
 
         Args:
@@ -670,7 +655,8 @@ class FakeFilesystem(object):
           mode: (int) Permissions
         """
         try:
-            file_object = self.GetObject(path)
+            resolve = self.ResolveObject if follow_symlinks else self.LResolveObject
+            file_object = resolve(path)
         except IOError as io_error:
             if io_error.errno == errno.ENOENT:
                 raise OSError(errno.ENOENT,
@@ -2239,7 +2225,7 @@ class FakeOsModule(object):
           OSError: if the filesystem object doesn't exist.
         """
         # stat should return the tuple representing return value of os.stat
-        return self.filesystem.GetLStat(entry_path)
+        return self.filesystem.GetStat(entry_path, follow_symlinks=False)
 
     def remove(self, path):
         """Removes the FakeFile object representing the specified file."""
@@ -2412,6 +2398,17 @@ class FakeOsModule(object):
           mode: (int) Permissions
         """
         self.filesystem.ChangeMode(path, mode)
+
+    if not _is_windows:
+        def lchmod(self, path, mode):
+            """Change the permissions of a file as encoded in integer mode.
+            If the file is a link, the permissions of the link are changed.
+
+            Args:
+              path: (str) Path to the file.
+              mode: (int) Permissions
+            """
+            self.filesystem.ChangeMode(path, mode, follow_symlinks=False)
 
     def utime(self, path, times):
         """Change the access and modified times of a file.

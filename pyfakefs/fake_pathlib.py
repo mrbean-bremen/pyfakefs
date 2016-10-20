@@ -1,3 +1,15 @@
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#      http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 import os
 import pathlib
 import stat
@@ -386,40 +398,41 @@ class FakePath(pathlib.PurePath):
         """
         if self._closed:
             self._raise_closed()
-        return FakeFileOpen(self.filesystem)(str(self), mode, buffering, encoding, errors, newline)
+        return FakeFileOpen(self.filesystem)(self._path(), mode, buffering, encoding, errors, newline)
 
-    def read_bytes(self):
-        """
-        Open the file in bytes mode, read it, and close the file.
-        """
-        with self.filesystem.FakeOpen(mode='rb') as f:
-            return f.read()
+    if sys.version_info >= (3, 5):
+        def read_bytes(self):
+            """
+            Open the file in bytes mode, read it, and close the file.
+            """
+            with FakeFileOpen(self.filesystem)(self._path(), mode='rb') as f:
+                return f.read()
 
-    def read_text(self, encoding=None, errors=None):
-        """
-        Open the file in text mode, read it, and close the file.
-        """
-        with self.filesystem.FakeOpen(mode='r', encoding=encoding, errors=errors) as f:
-            return f.read()
+        def read_text(self, encoding=None, errors=None):
+            """
+            Open the file in text mode, read it, and close the file.
+            """
+            with FakeFileOpen(self.filesystem)(self._path(), mode='r', encoding=encoding, errors=errors) as f:
+                return f.read()
 
-    def write_bytes(self, data):
-        """
-        Open the file in bytes mode, write to it, and close the file.
-        """
-        # type-check for the buffer interface before truncating the file
-        view = memoryview(data)
-        with self.filesystem.FakeOpen(mode='wb') as f:
-            return f.write(view)
+        def write_bytes(self, data):
+            """
+            Open the file in bytes mode, write to it, and close the file.
+            """
+            # type-check for the buffer interface before truncating the file
+            view = memoryview(data)
+            with FakeFileOpen(self.filesystem)(self._path(), mode='wb') as f:
+                return f.write(view)
 
-    def write_text(self, data, encoding=None, errors=None):
-        """
-        Open the file in text mode, write to it, and close the file.
-        """
-        if not isinstance(data, str):
-            raise TypeError('data must be str, not %s' %
-                            data.__class__.__name__)
-        with self.filesystem.FakeOpen(mode='w', encoding=encoding, errors=errors) as f:
-            return f.write(data)
+        def write_text(self, data, encoding=None, errors=None):
+            """
+            Open the file in text mode, write to it, and close the file.
+            """
+            if not isinstance(data, str):
+                raise TypeError('data must be str, not %s' %
+                                data.__class__.__name__)
+            with FakeFileOpen(self.filesystem)(self._path(), mode='w', encoding=encoding, errors=errors) as f:
+                return f.write(data)
 
     # def touch(self, mode=0o666, exist_ok=True):
     #     """
@@ -474,15 +487,15 @@ class FakePath(pathlib.PurePath):
             self._raise_closed()
         self.filesystem.ChangeMode(self._path(), mode)
 
-    # def lchmod(self, mode):
-    #     """
-    #     Like chmod(), except if the path points to a symlink, the symlink's
-    #     permissions are changed, rather than its target's.
-    #     """
-    #     if self._closed:
-    #         self._raise_closed()
-    #     self._accessor.lchmod(self, mode)
-    #
+    def lchmod(self, mode):
+        """
+        Like chmod(), except if the path points to a symlink, the symlink's
+        permissions are changed, rather than its target's.
+        """
+        if self._closed:
+            self._raise_closed()
+        self.filesystem.ChangeMode(self._path(), mode, follow_symlinks=False)
+
     def unlink(self):
         """
         Remove this file or link.
@@ -507,7 +520,7 @@ class FakePath(pathlib.PurePath):
         """
         if self._closed:
             self._raise_closed()
-        return self.filesystem.GetLStat(self._path())
+        return self.filesystem.GetStat(self._path(), follow_symlinks=False)
 
     def rename(self, target):
         """

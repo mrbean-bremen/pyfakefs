@@ -1083,6 +1083,22 @@ class FakeOsModuleTest(FakeOsModuleTestBase):
             self.assertEqual('test contents 1',
                              self.filesystem.GetObject(new_file_path).contents)
 
+    @unittest.skipIf(sys.version_info < (3, 3), 'replace is new in Python 3.3')
+    def testReplaceToExistentFile(self):
+        """Can rename a file to a used name under Unix, but raises OSError under Windows."""
+        directory = 'xyzzy'
+        old_file_path = '%s/plugh_old' % directory
+        new_file_path = '%s/plugh_new' % directory
+        self.filesystem.CreateFile(old_file_path, contents='test contents 1')
+        self.filesystem.CreateFile(new_file_path, contents='test contents 2')
+        self.assertTrue(self.filesystem.Exists(old_file_path))
+        self.assertTrue(self.filesystem.Exists(new_file_path))
+        self.os.replace(old_file_path, new_file_path)
+        self.assertFalse(self.filesystem.Exists(old_file_path))
+        self.assertTrue(self.filesystem.Exists(new_file_path))
+        self.assertEqual('test contents 1',
+                         self.filesystem.GetObject(new_file_path).contents)
+
     def testRenameToNonexistentDir(self):
         """Can rename a file to a name in a nonexistent dir."""
         directory = 'xyzzy'

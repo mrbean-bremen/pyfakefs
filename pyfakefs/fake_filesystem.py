@@ -637,8 +637,7 @@ class FakeFilesystem(object):
         """
         # stat should return the tuple representing return value of os.stat
         try:
-            resolve = self.ResolveObject if follow_symlinks else self.LResolveObject
-            stats = resolve(entry_path)
+            stats = self.ResolveObject(entry_path, follow_symlinks)
             st_obj = os.stat_result((stats.st_mode, stats.st_ino, stats.st_dev,
                                      stats.st_nlink, stats.st_uid, stats.st_gid,
                                      stats.st_size, stats.st_atime,
@@ -653,10 +652,11 @@ class FakeFilesystem(object):
         Args:
           path: (str) Path to the file.
           mode: (int) Permissions
+          follow_symlinks: if False and entry_path points to a link, the link itself is affected
+              instead of the linked object
         """
         try:
-            resolve = self.ResolveObject if follow_symlinks else self.LResolveObject
-            file_object = resolve(path)
+            file_object = self.ResolveObject(path, follow_symlinks)
         except IOError as io_error:
             if io_error.errno == errno.ENOENT:
                 raise OSError(errno.ENOENT,
@@ -666,6 +666,42 @@ class FakeFilesystem(object):
         file_object.st_mode = ((file_object.st_mode & ~PERM_ALL) |
                                (mode & PERM_ALL))
         file_object.st_ctime = time.time()
+
+    def UpdateTime(self, path, times, follow_symlinks=True):
+        """Change the access and modified times of a file.
+
+        Args:
+          path: (str) Path to the file.
+          times: 2-tuple of numbers, of the form (atime, mtime) which is used to set
+              the access and modified times, respectively. If None, file's access
+              and modified times are set to the current time.
+          follow_symlinks: if False and entry_path points to a link, the link itself is queried
+              instead of the linked object
+
+        Raises:
+          TypeError: If anything other than integers is specified in passed tuple or
+              number of elements in the tuple is not equal to 2.
+        """
+        try:
+            file_object = self.ResolveObject(path, follow_symlinks)
+        except IOError as io_error:
+            if io_error.errno == errno.ENOENT:
+                raise OSError(errno.ENOENT,
+                              'No such file or directory in fake filesystem',
+                              path)
+            raise
+        if times is None:
+            file_object.st_atime = time.time()
+            file_object.st_mtime = time.time()
+        else:
+            if len(times) != 2:
+                raise TypeError('utime() arg 2 must be a tuple (atime, mtime)')
+            for t in times:
+                if not isinstance(t, (int, float)):
+                    raise TypeError('atime and mtime must be numbers')
+
+            file_object.st_atime = times[0]
+            file_object.st_mtime = times[1]
 
     def SetIno(self, path, st_ino):
         """Set the self.st_ino attribute of file at 'path'.
@@ -1222,11 +1258,12 @@ class FakeFilesystem(object):
         file_path = self.NormalizePath(self.NormalizeCase(file_path))
         return self.GetObjectFromNormalizedPath(file_path)
 
-    def ResolveObject(self, file_path):
+    def ResolveObject(self, file_path, follow_symlinks=True):
         """Searches for the specified filesystem object, resolving all links.
 
         Args:
           file_path: specifies target FakeFile object to retrieve
+          follow_symlinks: if False, the link itself is resolved, other wise the object linked to
 
         Returns:
           the FakeFile object corresponding to file_path
@@ -1234,7 +1271,9 @@ class FakeFilesystem(object):
         Raises:
           IOError: if the object is not found
         """
-        return self.GetObjectFromNormalizedPath(self.ResolvePath(file_path))
+        if follow_symlinks:
+            return self.GetObjectFromNormalizedPath(self.ResolvePath(file_path))
+        return self.LResolveObject(file_path)
 
     def LResolveObject(self, path):
         """Searches for the specified object, resolving only parent links.
@@ -1288,13 +1327,15 @@ class FakeFilesystem(object):
                           'Not a directory in the fake filesystem',
                           file_path)
 
-    def RenameObject(self, old_file, new_file):
+    def RenameObject(self, old_file, new_file, force_replace=False):
         """Renames a FakeFile object at old_file to new_file, preserving all properties.
            Also replaces existing new_file object, if one existed (Unix only).
 
         Args:
           old_file:  path to filesystem object to rename
           new_file:  path to where the filesystem object will live after this call
+          force_replace: if set and destination is an existing file, it will be replaced
+                     even under Windows if the user has permissions
 
         Raises:
           OSError:  - if old_file does not exist
@@ -1319,7 +1360,7 @@ class FakeFilesystem(object):
                 raise OSError(errno.EEXIST,
                               'Fake filesystem object: can not rename to existing directory',
                               new_file)
-            elif _is_windows:
+            elif _is_windows and not force_replace:
                 raise OSError(errno.EEXIST,
                               'Fake filesystem object: can not rename to existing file',
                               new_file)
@@ -2198,11 +2239,13 @@ class FakeOsModule(object):
             raise OSError(errno.EINVAL, 'Fake os module: not a symlink', path)
         return link_obj.contents
 
-    def stat(self, entry_path):
+    def stat(self, entry_path, follow_symlinks=None):
         """Returns the os.stat-like tuple for the FakeFile object of entry_path.
 
         Args:
           entry_path:  path to filesystem object to retrieve
+          follow_symlinks: if False and entry_path points to a link, the link itself is inspected
+              instead of the linked object
 
         Returns:
           the os.stat_result object corresponding to entry_path
@@ -2210,7 +2253,11 @@ class FakeOsModule(object):
         Raises:
           OSError: if the filesystem object doesn't exist.
         """
-        return self.filesystem.GetStat(entry_path)
+        if follow_symlinks is None:
+            follow_symlinks = True
+        elif sys.version_info < (3, 3):
+            raise TypeError("stat() got an unexpected keyword argument 'follow_symlinks'")
+        return self.filesystem.GetStat(entry_path, follow_symlinks)
 
     def lstat(self, entry_path):
         """Returns the os.stat-like tuple for entry_path, not following symlinks.
@@ -2257,6 +2304,25 @@ class FakeOsModule(object):
                     - if the file would be moved to another filesystem (e.g. mount point)
         """
         self.filesystem.RenameObject(old_file, new_file)
+
+
+    if sys.version_info >= (3, 3):
+        def replace(self, old_file, new_file):
+            """Renames a FakeFile object at old_file to new_file, preserving all properties.
+            Also replaces existing new_file object, if one existed (both Windows and Unix).
+
+            Args:
+              old_file:  path to filesystem object to rename
+              new_file:  path to where the filesystem object will live after this call
+
+            Raises:
+              OSError:  - if old_file does not exist
+                        - new_file is an existing directory,
+                        - if new_file is an existing file and could not be removed (Unix)
+                        - if dirname(new_file) does not exist
+                        - if the file would be moved to another filesystem (e.g. mount point)
+            """
+            self.filesystem.RenameObject(old_file, new_file, force_replace=True)
 
     def rmdir(self, target_directory):
         """Remove a leaf Fake directory.
@@ -2390,14 +2456,20 @@ class FakeOsModule(object):
             raise
         return (mode & ((st.st_mode >> 6) & 7)) == mode
 
-    def chmod(self, path, mode):
+    def chmod(self, path, mode, follow_symlinks=None):
         """Change the permissions of a file as encoded in integer mode.
 
         Args:
           path: (str) Path to the file.
           mode: (int) Permissions
+          follow_symlinks: if False and entry_path points to a link, the link itself is changed
+              instead of the linked object
         """
-        self.filesystem.ChangeMode(path, mode)
+        if follow_symlinks is None:
+            follow_symlinks = True
+        elif sys.version_info < (3, 3):
+            raise TypeError("chmod() got an unexpected keyword argument 'follow_symlinks'")
+        self.filesystem.ChangeMode(path, mode, follow_symlinks)
 
     if not _is_windows:
         def lchmod(self, path, mode):
@@ -2410,7 +2482,7 @@ class FakeOsModule(object):
             """
             self.filesystem.ChangeMode(path, mode, follow_symlinks=False)
 
-    def utime(self, path, times):
+    def utime(self, path, times, follow_symlinks=None):
         """Change the access and modified times of a file.
 
         Args:
@@ -2418,45 +2490,38 @@ class FakeOsModule(object):
           times: 2-tuple of numbers, of the form (atime, mtime) which is used to set
               the access and modified times, respectively. If None, file's access
               and modified times are set to the current time.
+          follow_symlinks: if False and entry_path points to a link, the link itself is queried
+              instead of the linked object
 
         Raises:
           TypeError: If anything other than integers is specified in passed tuple or
               number of elements in the tuple is not equal to 2.
         """
-        try:
-            file_object = self.filesystem.ResolveObject(path)
-        except IOError as io_error:
-            if io_error.errno == errno.ENOENT:
-                raise OSError(errno.ENOENT,
-                              'No such file or directory in fake filesystem',
-                              path)
-            raise
-        if times is None:
-            file_object.st_atime = time.time()
-            file_object.st_mtime = time.time()
-        else:
-            if len(times) != 2:
-                raise TypeError('utime() arg 2 must be a tuple (atime, mtime)')
-            for t in times:
-                if not isinstance(t, (int, float)):
-                    raise TypeError('atime and mtime must be numbers')
+        if follow_symlinks is None:
+            follow_symlinks = True
+        elif sys.version_info < (3, 3):
+            raise TypeError("utime() got an unexpected keyword argument 'follow_symlinks'")
+        self.filesystem.UpdateTime(path, times, follow_symlinks)
 
-            file_object.st_atime = times[0]
-            file_object.st_mtime = times[1]
-
-    def chown(self, path, uid, gid):
+    def chown(self, path, uid, gid, follow_symlinks=None):
         """Set ownership of a faked file.
 
         Args:
           path: (str) Path to the file or directory.
           uid: (int) Numeric uid to set the file or directory to.
           gid: (int) Numeric gid to set the file or directory to.
+          follow_symlinks: if False and entry_path points to a link, the link itself is changed
+              instead of the linked object
 
         `None` is also allowed for `uid` and `gid`.  This permits `os.rename` to
         use `os.chown` even when the source file `uid` and `gid` are `None` (unset).
         """
+        if follow_symlinks is None:
+            follow_symlinks = True
+        elif sys.version_info < (3, 3):
+            raise TypeError("chown() got an unexpected keyword argument 'follow_symlinks'")
         try:
-            file_object = self.filesystem.GetObject(path)
+            file_object = self.filesystem.ResolveObject(path, follow_symlinks)
         except IOError as io_error:
             if io_error.errno == errno.ENOENT:
                 raise OSError(errno.ENOENT,

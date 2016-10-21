@@ -17,6 +17,8 @@ from urllib.parse import quote_from_bytes as urlquote_from_bytes
 
 import sys
 
+import errno
+
 from pyfakefs.fake_filesystem import FakeFileOpen
 
 
@@ -289,7 +291,7 @@ class FakePath(pathlib.PurePath):
         try:
             other_st = other_path.stat()
         except AttributeError:
-            other_st = self.filesystem.stat(other_path)
+            other_st = self.filesystem.GetStat(other_path)
         return st.st_ino == other_st.st_ino and st.st_dev == other_st.st_dev
 
     def iterdir(self):
@@ -434,28 +436,21 @@ class FakePath(pathlib.PurePath):
             with FakeFileOpen(self.filesystem)(self._path(), mode='w', encoding=encoding, errors=errors) as f:
                 return f.write(data)
 
-    # def touch(self, mode=0o666, exist_ok=True):
-    #     """
-    #     Create this file with the given access mode, if it doesn't exist.
-    #     """
-    #     if self._closed:
-    #         self._raise_closed()
-    #     if exist_ok:
-    #         # First try to bump modification time
-    #         # Implementation note: GNU touch uses the UTIME_NOW option of
-    #         # the utimensat() / futimens() functions.
-    #         try:
-    #             self._accessor.utime(self, None)
-    #         except OSError:
-    #             # Avoid exception chaining
-    #             pass
-    #         else:
-    #             return
-    #     flags = os.O_CREAT | os.O_WRONLY
-    #     if not exist_ok:
-    #         flags |= os.O_EXCL
-    #     fd = self._raw_open(flags, mode)
-    #     os.close(fd)
+    def touch(self, mode=0o666, exist_ok=True):
+        """
+        Create this file with the given access mode, if it doesn't exist.
+        """
+        if self._closed:
+            self._raise_closed()
+        if self.exists():
+            if exist_ok:
+                self.filesystem.UpdateTime(self._path(), None)
+            else:
+                raise FileExistsError
+        else:
+            fake_file = self.open('w')
+            fake_file.close()
+            self.chmod(mode)
 
     def mkdir(self, mode=0o777, parents=False, exist_ok=False):
         if self._closed:
@@ -503,7 +498,12 @@ class FakePath(pathlib.PurePath):
         """
         if self._closed:
             self._raise_closed()
-        self.filesystem.RemoveObject(self._path())
+        if self.is_dir() and not self.is_symlink():
+            raise OSError(errno.EISDIR, "'%s' is a directory" % self)
+        try:
+            self.filesystem.RemoveObject(self._path())
+        except IOError as e:
+            raise OSError(e.errno, e.strerror, e.filename)
 
     def rmdir(self):
         """
@@ -539,8 +539,7 @@ class FakePath(pathlib.PurePath):
         """
         if self._closed:
             self._raise_closed()
-        # todo: real replace
-        self.filesystem.RenameObject(self._path(), target)
+        self.filesystem.RenameObject(self._path(), target, force_replace=True)
 
     def symlink_to(self, target, target_is_directory=False):
         """
@@ -560,18 +559,9 @@ class FakePath(pathlib.PurePath):
         """
         return self.filesystem.Exists(self._path())
 
-    def _is_type(self, st_flag):
+    def _is_type(self, st_flag, follow_symlinks=True):
         try:
-            path_object = self.filesystem.ResolveObject(self._path())
-            if path_object:
-                return stat.S_IFMT(path_object.st_mode) == st_flag
-        except IOError:
-            return False
-        return False
-
-    def _is_ltype(self, st_flag):
-        try:
-            path_object = self.filesystem.LResolveObject(self._path())
+            path_object = self.filesystem.ResolveObject(self._path(), follow_symlinks)
             if path_object:
                 return stat.S_IFMT(path_object.st_mode) == st_flag
         except IOError:
@@ -595,13 +585,13 @@ class FakePath(pathlib.PurePath):
         """
         Whether this path is a symbolic link.
         """
-        return self._is_ltype(stat.S_IFLNK)
+        return self._is_type(stat.S_IFLNK, follow_symlinks=False)
 
     def is_block_device(self):
         """
         Whether this path is a block device.
         """
-        return self._is_ltype(stat.S_IFBLK)
+        return self._is_type(stat.S_IFBLK, follow_symlinks=False)
 
     def is_char_device(self):
         """

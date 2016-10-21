@@ -346,6 +346,55 @@ class FakePathlibPathFileOperationTest(unittest.TestCase):
         file_object = self.filesystem.ResolveObject('binary_file')
         self.assertEqual(file_object.byte_contents, b'Binary file contents')
 
+    def test_rename(self):
+        self.filesystem.CreateFile('/foo/bar.txt', contents='test')
+        self.path('/foo/bar.txt').rename('foo/baz.txt')
+        self.assertFalse(self.filesystem.Exists('/foo/bar.txt'))
+        file_obj = self.filesystem.ResolveObject('foo/baz.txt')
+        self.assertTrue(file_obj)
+        self.assertEqual(file_obj.contents, 'test')
+
+    def test_replace(self):
+        self.filesystem.CreateFile('/foo/bar.txt', contents='test')
+        self.filesystem.CreateFile('/bar/old.txt', contents='replaced')
+        self.path('/bar/old.txt').replace('foo/bar.txt')
+        self.assertFalse(self.filesystem.Exists('/bar/old.txt'))
+        file_obj = self.filesystem.ResolveObject('foo/bar.txt')
+        self.assertTrue(file_obj)
+        self.assertEqual(file_obj.contents, 'replaced')
+
+    def test_unlink(self):
+        self.filesystem.CreateFile('/foo/bar.txt', contents='test')
+        self.assertTrue(self.filesystem.Exists('/foo/bar.txt'))
+        self.path('/foo/bar.txt').unlink()
+        self.assertFalse(self.filesystem.Exists('/foo/bar.txt'))
+
+    def test_touch_non_existing(self):
+        self.filesystem.CreateDirectory('/foo')
+        self.path('/foo/bar.txt').touch(mode=0o444)
+        file_obj = self.filesystem.ResolveObject('/foo/bar.txt')
+        self.assertTrue(file_obj)
+        self.assertEqual(file_obj.contents, '')
+        self.assertTrue(file_obj.st_mode, stat.S_IFREG | 0o444)
+
+    def test_touch_existing(self):
+        self.filesystem.CreateFile('/foo/bar.txt', contents='test')
+        file_path = self.path('/foo/bar.txt')
+        self.assertRaises(FileExistsError, file_path.touch, exist_ok=False)
+        file_path.touch()
+        file_obj = self.filesystem.ResolveObject('/foo/bar.txt')
+        self.assertTrue(file_obj)
+        self.assertEqual(file_obj.contents, 'test')
+
+    def test_samefile(self):
+        self.filesystem.CreateFile('/foo/bar.txt')
+        self.filesystem.CreateFile('/foo/baz.txt')
+        self.assertRaises(OSError, self.path('/foo/other').samefile, '/foo/other.txt')
+        path = self.path('/foo/bar.txt')
+        self.assertRaises(OSError, path.samefile, '/foo/other.txt')
+        self.assertFalse(path.samefile('/foo/baz.txt'))
+        self.assertTrue(path.samefile('/foo/../foo/bar.txt'))
+
 
 if __name__ == '__main__':
     unittest.main()

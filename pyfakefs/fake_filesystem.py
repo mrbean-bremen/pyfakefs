@@ -2497,9 +2497,7 @@ class FakeOsModule(object):
         Returns:
           boolean, True if file is accessible, False otherwise
         """
-        if follow_symlinks is None:
-            follow_symlinks = True
-        elif sys.version_info < (3, 3):
+        if follow_symlinks is not None and sys.version_info < (3, 3):
             raise TypeError("access() got an unexpected keyword argument 'follow_symlinks'")
         try:
             st = self.stat(path, follow_symlinks)

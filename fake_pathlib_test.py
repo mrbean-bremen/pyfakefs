@@ -412,6 +412,10 @@ class FakePathlibPathFileOperationTest(unittest.TestCase):
         self.path('/foo/bar').mkdir(parents=True)
         self.assertTrue(self.filesystem.Exists('/foo/bar'))
         self.assertRaises(FileExistsError, self.path('/foo/bar').mkdir)
+
+    @unittest.skipIf(sys.version_info < (3, 5), 'exist_ok argument new in Python 3.5')
+    def test_mkdir_exist_ok(self):
+        self.filesystem.CreateDirectory('/foo/bar')
         self.path('foo/bar').mkdir(exist_ok=True)
         self.filesystem.CreateFile('/foo/bar/baz')
         self.assertRaises(FileExistsError, self.path('/foo/bar/baz').mkdir, exist_ok=True)

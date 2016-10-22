@@ -1573,6 +1573,123 @@ class FakeFilesystem(object):
         self.AddObject(new_parent_directory, old_file)
         return old_file
 
+    def MakeDirectory(self, dir_name, mode=PERM_DEF):
+        """Create a leaf Fake directory.
+
+        Args:
+          dir_name: (str) Name of directory to create.  Relative paths are assumed
+            to be relative to '/'.
+          mode: (int) Mode to create directory with.  This argument defaults to
+            0o777.  The umask is applied to this mode.
+
+        Raises:
+          OSError: if the directory name is invalid or parent directory is read only
+          or as per FakeFilesystem.AddObject.
+        """
+        if self._EndsWithPathSeparator(dir_name):
+            dir_name = dir_name[:-1]
+
+        parent_dir, _ = self.SplitPath(dir_name)
+        if parent_dir:
+            base_dir = self.CollapsePath(parent_dir)
+            if parent_dir.endswith(self.path_separator + '..'):
+                base_dir, unused_dotdot, _ = parent_dir.partition(self.path_separator + '..')
+            if not self.Exists(base_dir):
+                raise OSError(errno.ENOENT, 'No such fake directory', base_dir)
+
+        dir_name = self.NormalizePath(dir_name)
+        if self.Exists(dir_name):
+            raise OSError(errno.EEXIST, 'Fake object already exists', dir_name)
+        head, tail = self.SplitPath(dir_name)
+        directory_object = self.GetObject(head)
+        if not directory_object.st_mode & PERM_WRITE:
+            raise OSError(errno.EACCES, 'Permission Denied', dir_name)
+
+        self.AddObject(
+            head, FakeDirectory(tail, mode & ~self.umask))
+
+    def MakeDirectories(self, dir_name, mode=PERM_DEF, exist_ok=False):
+        """Create a leaf Fake directory + create any non-existent parent dirs.
+
+        Args:
+          dir_name: (str) Name of directory to create.
+          mode: (int) Mode to create directory (and any necessary parent
+            directories) with. This argument defaults to 0o777.  The umask is
+            applied to this mode.
+          exist_ok: (boolean) If exist_ok is False (the default), an OSError is
+            raised if the target directory already exists.  New in Python 3.2.
+
+        Raises:
+          OSError: if the directory already exists and exist_ok=False, or as per
+          FakeFilesystem.CreateDirectory()
+        """
+        dir_name = self.NormalizePath(dir_name)
+        path_components = self.GetPathComponents(dir_name)
+
+        # Raise a permission denied error if the first existing directory is not
+        # writeable.
+        current_dir = self.root
+        for component in path_components:
+            if component not in current_dir.contents:
+                if not current_dir.st_mode & PERM_WRITE:
+                    raise OSError(errno.EACCES, 'Permission Denied', dir_name)
+                else:
+                    break
+            else:
+                current_dir = current_dir.contents[component]
+        try:
+            self.CreateDirectory(dir_name, mode & ~self.umask)
+        except OSError:
+            if (not exist_ok or
+                    not isinstance(self.ResolveObject(dir_name), FakeDirectory)):
+                raise
+
+    def _ConfirmDir(self, target_directory):
+        """Tests that the target is actually a directory, raising OSError if not.
+
+        Args:
+          target_directory:  path to the target directory within the fake
+            filesystem
+
+        Returns:
+          the FakeFile object corresponding to target_directory
+
+        Raises:
+          OSError:  if the target is not a directory
+        """
+        try:
+            directory = self.GetObject(target_directory)
+        except IOError as e:
+            raise OSError(e.errno, e.strerror, target_directory)
+        if not directory.st_mode & stat.S_IFDIR:
+            raise OSError(errno.ENOTDIR,
+                          'Fake os module: not a directory',
+                          target_directory)
+        return directory
+
+    def RemoveDirectory(self, target_directory):
+        """Remove a leaf Fake directory.
+
+        Args:
+          target_directory: (str) Name of directory to remove.
+
+        Raises:
+          OSError: if target_directory does not exist or is not a directory,
+          or as per FakeFilesystem.RemoveObject. Cannot remove '.'.
+        """
+        if target_directory == '.':
+            raise OSError(errno.EINVAL, 'Invalid argument: \'.\'')
+        target_directory = self.NormalizePath(target_directory)
+        if self._ConfirmDir(target_directory):
+            dir_object = self.ResolveObject(target_directory)
+            if dir_object.contents:
+                raise OSError(errno.ENOTEMPTY, 'Fake Directory not empty',
+                              target_directory)
+            try:
+                self.RemoveObject(target_directory)
+            except IOError as e:
+                raise OSError(e.errno, e.strerror, e.filename)
+
     def __str__(self):
         return str(self.root)
 
@@ -1983,29 +2100,6 @@ class FakeOsModule(object):
                                  stats.st_mtime, stats.st_ctime))
         return st_obj
 
-    def _ConfirmDir(self, target_directory):
-        """Tests that the target is actually a directory, raising OSError if not.
-
-        Args:
-          target_directory:  path to the target directory within the fake
-            filesystem
-
-        Returns:
-          the FakeFile object corresponding to target_directory
-
-        Raises:
-          OSError:  if the target is not a directory
-        """
-        try:
-            directory = self.filesystem.GetObject(target_directory)
-        except IOError as e:
-            raise OSError(e.errno, e.strerror, target_directory)
-        if not directory.st_mode & stat.S_IFDIR:
-            raise OSError(errno.ENOTDIR,
-                          'Fake os module: not a directory',
-                          target_directory)
-        return directory
-
     def umask(self, new_mask):
         """Change the current umask.
 
@@ -2035,7 +2129,7 @@ class FakeOsModule(object):
                    the target is not a directory
         """
         target_directory = self.filesystem.ResolvePath(target_directory)
-        self._ConfirmDir(target_directory)
+        self.filesystem._ConfirmDir(target_directory)
         directory = self.filesystem.GetObject(target_directory)
         # A full implementation would check permissions all the way up the tree.
         if not directory.st_mode | PERM_EXE:
@@ -2067,7 +2161,7 @@ class FakeOsModule(object):
           OSError:  if the target is not a directory
         """
         target_directory = self.filesystem.ResolvePath(target_directory)
-        directory = self._ConfirmDir(target_directory)
+        directory = self.filesystem._ConfirmDir(target_directory)
         return sorted(directory.contents)
 
     if sys.version_info >= (3, 5):
@@ -2141,7 +2235,7 @@ class FakeOsModule(object):
               OSError: if the target is not a directory
             """
             path = self.filesystem.ResolvePath(path)
-            fake_dir = self._ConfirmDir(path)
+            fake_dir = self.filesystem._ConfirmDir(path)
             for entry in fake_dir.contents:
                 dir_entry = self.DirEntry(self)
                 dir_entry.name = entry
@@ -2245,7 +2339,7 @@ class FakeOsModule(object):
         Args:
           entry_path:  path to filesystem object to retrieve
           follow_symlinks: if False and entry_path points to a link, the link itself is inspected
-              instead of the linked object
+              instead of the linked object. New in Python 3.3.
 
         Returns:
           the os.stat_result object corresponding to entry_path
@@ -2334,22 +2428,12 @@ class FakeOsModule(object):
           OSError: if target_directory does not exist or is not a directory,
           or as per FakeFilesystem.RemoveObject. Cannot remove '.'.
         """
-        if target_directory == '.':
-            raise OSError(errno.EINVAL, 'Invalid argument: \'.\'')
-        target_directory = self.filesystem.NormalizePath(target_directory)
-        if self._ConfirmDir(target_directory):
-            if self.listdir(target_directory):
-                raise OSError(errno.ENOTEMPTY, 'Fake Directory not empty',
-                              target_directory)
-            try:
-                self.filesystem.RemoveObject(target_directory)
-            except IOError as e:
-                raise OSError(e.errno, e.strerror, e.filename)
+        self.filesystem.RemoveDirectory(target_directory)
 
     def removedirs(self, target_directory):
         """Remove a leaf Fake directory and all empty intermediate ones."""
         target_directory = self.filesystem.NormalizePath(target_directory)
-        directory = self._ConfirmDir(target_directory)
+        directory = self.filesystem._ConfirmDir(target_directory)
         if directory.contents:
             raise OSError(errno.ENOTEMPTY, 'Fake Directory not empty',
                           self.path.basename(target_directory))
@@ -2359,7 +2443,7 @@ class FakeOsModule(object):
         if not tail:
             head, tail = self.path.split(head)
         while head and tail:
-            head_dir = self._ConfirmDir(head)
+            head_dir = self.filesystem._ConfirmDir(head)
             if head_dir.contents:
                 break
             self.rmdir(head)
@@ -2378,29 +2462,9 @@ class FakeOsModule(object):
           OSError: if the directory name is invalid or parent directory is read only
           or as per FakeFilesystem.AddObject.
         """
-        if self.filesystem._EndsWithPathSeparator(dir_name):
-            dir_name = dir_name[:-1]
+        self.filesystem.MakeDirectory(dir_name, mode)
 
-        parent_dir, _ = self.path.split(dir_name)
-        if parent_dir:
-            base_dir = self.path.normpath(parent_dir)
-            if parent_dir.endswith(self.sep + '..'):
-                base_dir, unused_dotdot, _ = parent_dir.partition(self.sep + '..')
-            if not self.filesystem.Exists(base_dir):
-                raise OSError(errno.ENOENT, 'No such fake directory', base_dir)
-
-        dir_name = self.filesystem.NormalizePath(dir_name)
-        if self.filesystem.Exists(dir_name):
-            raise OSError(errno.EEXIST, 'Fake object already exists', dir_name)
-        head, tail = self.path.split(dir_name)
-        directory_object = self.filesystem.GetObject(head)
-        if not directory_object.st_mode & PERM_WRITE:
-            raise OSError(errno.EACCES, 'Permission Denied', dir_name)
-
-        self.filesystem.AddObject(
-            head, FakeDirectory(tail, mode & ~self.filesystem.umask))
-
-    def makedirs(self, dir_name, mode=PERM_DEF, exist_ok=False):
+    def makedirs(self, dir_name, mode=PERM_DEF, exist_ok=None):
         """Create a leaf Fake directory + create any non-existent parent dirs.
 
         Args:
@@ -2415,41 +2479,30 @@ class FakeOsModule(object):
           OSError: if the directory already exists and exist_ok=False, or as per
           FakeFilesystem.CreateDirectory()
         """
-        if exist_ok and sys.version_info < (3, 2):
+        if exist_ok is None:
+            exist_ok = False
+        elif sys.version_info < (3, 2):
             raise TypeError("makedir() got an unexpected keyword argument 'exist_ok'")
+        self.filesystem.MakeDirectories(dir_name, mode, exist_ok)
 
-        dir_name = self.filesystem.NormalizePath(dir_name)
-        path_components = self.filesystem.GetPathComponents(dir_name)
-
-        # Raise a permission denied error if the first existing directory is not
-        # writeable.
-        current_dir = self.filesystem.root
-        for component in path_components:
-            if component not in current_dir.contents:
-                if not current_dir.st_mode & PERM_WRITE:
-                    raise OSError(errno.EACCES, 'Permission Denied', dir_name)
-                else:
-                    break
-            else:
-                current_dir = current_dir.contents[component]
-        try:
-            self.filesystem.CreateDirectory(dir_name, mode & ~self.filesystem.umask)
-        except OSError:
-            if not exist_ok or not self.path.isdir(dir_name):
-                raise
-
-    def access(self, path, mode):
+    def access(self, path, mode, follow_symlinks=None):
         """Check if a file exists and has the specified permissions.
 
         Args:
           path: (str) Path to the file.
           mode: (int) Permissions represented as a bitwise-OR combination of
               os.F_OK, os.R_OK, os.W_OK, and os.X_OK.
+          follow_symlinks: if False and entry_path points to a link, the link itself is queried
+              instead of the linked object. New in Python 3.3.
         Returns:
           boolean, True if file is accessible, False otherwise
         """
+        if follow_symlinks is None:
+            follow_symlinks = True
+        elif sys.version_info < (3, 3):
+            raise TypeError("access() got an unexpected keyword argument 'follow_symlinks'")
         try:
-            st = self.stat(path)
+            st = self.stat(path, follow_symlinks)
         except OSError as os_error:
             if os_error.errno == errno.ENOENT:
                 return False
@@ -2463,7 +2516,7 @@ class FakeOsModule(object):
           path: (str) Path to the file.
           mode: (int) Permissions
           follow_symlinks: if False and entry_path points to a link, the link itself is changed
-              instead of the linked object
+              instead of the linked object. New in Python 3.3.
         """
         if follow_symlinks is None:
             follow_symlinks = True
@@ -2491,7 +2544,7 @@ class FakeOsModule(object):
               the access and modified times, respectively. If None, file's access
               and modified times are set to the current time.
           follow_symlinks: if False and entry_path points to a link, the link itself is queried
-              instead of the linked object
+              instead of the linked object. New in Python 3.3.
 
         Raises:
           TypeError: If anything other than integers is specified in passed tuple or
@@ -2511,7 +2564,7 @@ class FakeOsModule(object):
           uid: (int) Numeric uid to set the file or directory to.
           gid: (int) Numeric gid to set the file or directory to.
           follow_symlinks: if False and entry_path points to a link, the link itself is changed
-              instead of the linked object
+              instead of the linked object. New in Python 3.3.
 
         `None` is also allowed for `uid` and `gid`.  This permits `os.rename` to
         use `os.chown` even when the source file `uid` and `gid` are `None` (unset).

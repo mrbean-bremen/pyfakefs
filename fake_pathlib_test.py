@@ -13,7 +13,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Unittests for fake_pathlib."""
+"""
+Unittests for fake_pathlib.
+As most of fake_pathlib is a wrapper around fake_filesystem methods, the tests
+are there mostly to ensure basic functionality.
+Note that many of the tests are directly taken from examples in the python docs.
+"""
 
 import os
 import stat
@@ -124,6 +129,7 @@ class FakePathlibInitializationWithDriveTest(unittest.TestCase):
 
 
 class FakePathlibPurePathTest(unittest.TestCase):
+    """Tests functionality present in PurePath class."""
     def setUp(self):
         filesystem = fake_filesystem.FakeFilesystem(path_separator='/')
         filesystem.supports_drive_letter = True
@@ -186,18 +192,6 @@ class FakePathlibPathTest(unittest.TestCase):
         self.filesystem.cwd = '/home/jane'
         self.assertEqual(self.path.cwd(), '/home/jane')
 
-    def test_exists(self):
-        self.filesystem.CreateFile('/home/jane/test.py')
-        self.filesystem.CreateDirectory('/home/john')
-        self.filesystem.CreateLink('/john', '/home/john')
-        self.filesystem.CreateLink('/none', '/home/none')
-
-        self.assertTrue(self.path('/home/jane/test.py').exists())
-        self.assertTrue(self.path('/home/jane').exists())
-        self.assertTrue(self.path('/john').exists())
-        self.assertFalse(self.path('/none').exists())
-        self.assertFalse(self.path('/home/jane/test').exists())
-
     def test_expanduser(self):
         if is_windows:
             self.assertEqual(self.path('~').expanduser(),
@@ -207,7 +201,7 @@ class FakePathlibPathTest(unittest.TestCase):
                              self.path(os.environ['HOME']))
 
 
-class FakePathlibFileObjectProperrtyTest(unittest.TestCase):
+class FakePathlibFileObjectPropertyTest(unittest.TestCase):
     def setUp(self):
         self.filesystem = fake_filesystem.FakeFilesystem(path_separator='/')
         self.filesystem.supports_drive_letter = False
@@ -287,11 +281,18 @@ class FakePathlibFileObjectProperrtyTest(unittest.TestCase):
         self.assertEqual(file_object.st_mode, stat.S_IFREG | 0o666)
         self.assertEqual(link_object.st_mode, stat.S_IFLNK | 0o444)
 
+    def test_resolve(self):
+        self.filesystem.cwd = '/home/antoine'
+        self.filesystem.CreateDirectory('/home/antoine/docs')
+        self.filesystem.CreateFile('/home/antoine/setup.py')
+        self.assertEqual(self.path().resolve(),
+                         self.path('/home/antoine'))
+        self.assertEqual(self.path('docs/../setup.py').resolve(),
+                         self.path('/home/antoine/setup.py'))
+
 
 class FakePathlibPathFileOperationTest(unittest.TestCase):
-    """Tests some basic file handling. Mostly we can rely on the existing tests
-    for fake_filesystem methods, as most pathlib methods are just a wrapper around them.
-    """
+    """Tests methods related to file and directory handling."""
 
     def setUp(self):
         self.filesystem = fake_filesystem.FakeFilesystem(path_separator='/')
@@ -395,6 +396,43 @@ class FakePathlibPathFileOperationTest(unittest.TestCase):
         self.assertFalse(path.samefile('/foo/baz.txt'))
         self.assertTrue(path.samefile('/foo/../foo/bar.txt'))
 
+    def test_symlink_to(self):
+        self.filesystem.CreateFile('/foo/bar.txt')
+        path = self.path('/link_to_bar')
+        path.symlink_to('/foo/bar.txt')
+        self.assertTrue(self.filesystem.Exists('/link_to_bar'))
+        file_obj = self.filesystem.ResolveObject('/foo/bar.txt')
+        linked_file_obj = self.filesystem.ResolveObject('/link_to_bar')
+        self.assertEqual(file_obj, linked_file_obj)
+        link__obj = self.filesystem.LResolveObject('/link_to_bar')
+        self.assertTrue(path.is_symlink())
+
+    def test_mkdir(self):
+        self.assertRaises(FileNotFoundError, self.path('/foo/bar').mkdir)
+        self.path('/foo/bar').mkdir(parents=True)
+        self.assertTrue(self.filesystem.Exists('/foo/bar'))
+        self.assertRaises(FileExistsError, self.path('/foo/bar').mkdir)
+        self.path('foo/bar').mkdir(exist_ok=True)
+        self.filesystem.CreateFile('/foo/bar/baz')
+        self.assertRaises(FileExistsError, self.path('/foo/bar/baz').mkdir, exist_ok=True)
+
+    def test_rmdir(self):
+        self.filesystem.CreateDirectory('/foo/bar')
+        self.path('/foo/bar').rmdir()
+        self.assertFalse(self.filesystem.Exists('/foo/bar'))
+        self.assertTrue(self.filesystem.Exists('/foo'))
+        self.filesystem.CreateFile('/foo/baz')
+        self.assertRaises(OSError, self.path('/foo').rmdir)
+        self.assertTrue(self.filesystem.Exists('/foo'))
+
+    def test_iterdir(self):
+        self.filesystem.CreateFile('/foo/bar/file1')
+        self.filesystem.CreateFile('/foo/bar/file2')
+        self.filesystem.CreateFile('/foo/bar/file3')
+        path = self.path('/foo/bar')
+        contents = [entry for entry in path.iterdir()]
+        self.assertEqual(3, len(contents))
+        self.assertIn('file2', contents)
 
 if __name__ == '__main__':
     unittest.main()

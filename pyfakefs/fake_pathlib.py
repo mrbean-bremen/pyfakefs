@@ -19,7 +19,7 @@ import sys
 
 import errno
 
-from pyfakefs.fake_filesystem import FakeFileOpen
+from pyfakefs.fake_filesystem import FakeFileOpen, FakeDirectory
 
 
 def init_module(filesystem):
@@ -300,14 +300,12 @@ class FakePath(pathlib.PurePath):
         """
         if self._closed:
             self._raise_closed()
-            # todo: move listdir impl to filesystem
-            # for name in self.filesystem.listdir(self):
-            #     if name in {'.', '..'}:
-            #         # Yielding a path object for these makes little sense
-            #         continue
-            #     yield self._make_child_relpath(name)
-            #     if self._closed:
-            #         self._raise_closed()
+        dir_object = self.filesystem.ResolveObject(self._path())
+        if isinstance(dir_object, FakeDirectory):
+            for content in dir_object.contents:
+                yield content
+                if self._closed:
+                    self._raise_closed()
 
     # def glob(self, pattern):
     #     """Iterate over this subtree and yield all existing files (of any
@@ -359,17 +357,8 @@ class FakePath(pathlib.PurePath):
         """
         if self._closed:
             self._raise_closed()
-        s = self._flavour.resolve(self)
-        if s is None:
-            # No symlink resolution => for consistency, raise an error if
-            # the path doesn't exist or is forbidden
-            self.stat()
-            s = str(self.absolute())
-        # Now we have no symlinks in the path, it's safe to normalize it.
-        normed = self.filesystem.CollapsePath(s)
-        obj = self._from_parts((normed,), init=False)
-        obj._init(template=self)
-        return obj
+        path = self.filesystem.ResolvePath(self._path())
+        return FakePath(path)
 
     def stat(self):
         """
@@ -452,27 +441,26 @@ class FakePath(pathlib.PurePath):
             fake_file.close()
             self.chmod(mode)
 
-    def mkdir(self, mode=0o777, parents=False, exist_ok=False):
+    def mkdir(self, mode=0o777, parents=False, exist_ok=None):
+        if exist_ok is None:
+            exist_ok = False
+        elif sys.version_info < (3, 5):
+            raise TypeError("mkdir() got an unexpected keyword argument 'exist_ok'")
+
         if self._closed:
             self._raise_closed()
-            # todo: move mkdir and makedirs implementation to FileSystem
-            # if not parents:
-            #     try:
-            #         self._accessor.mkdir(self, mode)
-            #     except FileExistsError:
-            #         if not exist_ok or not self.is_dir():
-            #             raise
-            # else:
-            #     try:
-            #         self._accessor.mkdir(self, mode)
-            #     except FileExistsError:
-            #         if not exist_ok or not self.is_dir():
-            #             raise
-            #     except OSError as e:
-            #         if e.errno != ENOENT:
-            #             raise
-            #         self.parent.mkdir(parents=True)
-            #         self._accessor.mkdir(self, mode)
+        if parents:
+            self.filesystem.MakeDirectories(self._path(), mode, exist_ok)
+        else:
+            try:
+                self.filesystem.MakeDirectory(self._path(), mode)
+            except OSError as e:
+                if e.errno == errno.EEXIST:
+                    if exist_ok and self.is_dir():
+                        return
+                    else:
+                        raise FileExistsError
+                raise
 
     def chmod(self, mode):
         """
@@ -511,7 +499,7 @@ class FakePath(pathlib.PurePath):
         """
         if self._closed:
             self._raise_closed()
-        self.filesystem.RemoveObject(self._path())
+        self.filesystem.RemoveDirectory(self._path())
 
     def lstat(self):
         """
@@ -544,14 +532,16 @@ class FakePath(pathlib.PurePath):
     def symlink_to(self, target, target_is_directory=False):
         """
         Make this path a symlink pointing to the given path.
-        Note the order of arguments (self, target) is the reverse of os.symlink's.
+
+        Args:
+            target_is_directory: ignored
+            Note: per description, this parameter is used under Windows only and needed
+                  if destination is a directory; this seems not to be true, at least with Python 3.5,
+                  so we just ignore the argument under both Windows and Unix
         """
         if self._closed:
             self._raise_closed()
-        # todo: handle target_is_directory
         self.filesystem.CreateLink(self._path(), target)
-
-    # Convenience functions for querying the stat results
 
     def exists(self):
         """

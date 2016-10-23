@@ -257,7 +257,7 @@ class FakePathlibFileObjectPropertyTest(unittest.TestCase):
     def test_lchmod(self):
         file_object = self.filesystem.ResolveObject('/home/jane/test.py')
         link_object = self.filesystem.LResolveObject('/test.py')
-        if is_windows:
+        if not hasattr(os, "lchmod"):
             self.assertRaises(NotImplementedError, self.path('/test.py').lchmod, 0o444)
         else:
             self.path('/test.py').lchmod(0o444)

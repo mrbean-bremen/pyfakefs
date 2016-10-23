@@ -1671,12 +1671,14 @@ class FakeFilesystem(object):
     def RemoveFile(self, path):
         """Removes the FakeFile object representing the specified file."""
         path = self.NormalizePath(path)
-        try:
+        if self.Exists(path):
             obj = self.ResolveObject(path)
             if stat.S_IFMT(obj.st_mode) == stat.S_IFDIR:
                 link_obj = self.LResolveObject(path)
                 if stat.S_IFMT(link_obj.st_mode) != stat.S_IFLNK:
                     raise OSError(errno.EISDIR, "Is a directory: '%s'" % path)
+
+        try:
             self.RemoveObject(path)
         except IOError as e:
             raise OSError(e.errno, e.strerror, e.filename)

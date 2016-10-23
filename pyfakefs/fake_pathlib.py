@@ -10,16 +10,31 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
+"""A fake implementation for pathlib working with FakeFilesystem.
+Usage:
+* With fake_filesystem_unittest:
+  If using fake_filesystem_unittest.TestCase, pathlib gets replaced
+  by fake_pathlib together with other file system related modules.
+
+* Stand-alone with FakeFilesystem:
+  `filesystem = fake_filesystem.FakeFilesystem()`
+  `fake_pathlib_module = fake_filesystem.FakePathlibModule(filesystem)`
+  `path = fake_pathlib_module.Path('/foo/bar')`
+
+Note: as the implementation is based on FakeFilesystem, all faked classes
+(including PurePosixPath, PosixPath, PureWindowsPath and WindowsPath)
+get the properties of the underlying fake filesystem.
+"""
+
 import os
 import pathlib
-import stat
 from urllib.parse import quote_from_bytes as urlquote_from_bytes
 
 import sys
 
-import errno
+import functools
 
-from pyfakefs.fake_filesystem import FakeFileOpen, FakeDirectory
+from pyfakefs.fake_filesystem import FakeFileOpen, FakeFilesystem
 
 
 def init_module(filesystem):
@@ -28,7 +43,66 @@ def init_module(filesystem):
     FakePathlibModule.PurePosixPath._flavour = _FakePosixFlavour(filesystem)
 
 
+class _FakeAccessor(pathlib._Accessor):
+    """Accessor which forwards some of the functions to FakeFilesystem methods."""
+
+    def _wrap_strfunc(strfunc):
+        @functools.wraps(strfunc)
+        def wrapped(pathobj, *args):
+            return strfunc(pathobj.filesystem, str(pathobj), *args)
+
+        return staticmethod(wrapped)
+
+    def _wrap_binary_strfunc(strfunc):
+        @functools.wraps(strfunc)
+        def wrapped(pathobjA, pathobjB, *args):
+            return strfunc(pathobjA.filesystem, str(pathobjA), str(pathobjB), *args)
+
+        return staticmethod(wrapped)
+
+    def _wrap_binary_strfunc_reverse(strfunc):
+        @functools.wraps(strfunc)
+        def wrapped(pathobjA, pathobjB, *args):
+            return strfunc(pathobjB.filesystem, str(pathobjB), str(pathobjA), *args)
+
+        return staticmethod(wrapped)
+
+    stat = _wrap_strfunc(FakeFilesystem.GetStat)
+
+    lstat = _wrap_strfunc(lambda fs, path: FakeFilesystem.GetStat(fs, path, follow_symlinks=False))
+
+    listdir = _wrap_strfunc(FakeFilesystem.ListDir)
+
+    chmod = _wrap_strfunc(FakeFilesystem.ChangeMode)
+
+    if hasattr(os, "lchmod"):
+        lchmod = _wrap_strfunc(lambda fs, path: FakeFilesystem.ChangeMode(fs, path, follow_symlinks=False))
+    else:
+        def lchmod(self, pathobj, mode):
+            raise NotImplementedError("lchmod() not available on this system")
+
+    mkdir = _wrap_strfunc(FakeFilesystem.MakeDirectory)
+
+    unlink = _wrap_strfunc(FakeFilesystem.RemoveFile)
+
+    rmdir = _wrap_strfunc(FakeFilesystem.RemoveDirectory)
+
+    rename = _wrap_binary_strfunc(FakeFilesystem.RenameObject)
+
+    replace = _wrap_binary_strfunc(lambda fs, old_path, new_path:
+                                   FakeFilesystem.RenameObject(fs, old_path, new_path, force_replace=True))
+
+    symlink = _wrap_binary_strfunc_reverse(FakeFilesystem.CreateLink)
+
+    utime = _wrap_strfunc(FakeFilesystem.UpdateTime)
+
+
+_fake_accessor = _FakeAccessor()
+
+
 class _FakeFlavour(pathlib._Flavour):
+    """Fake Flavour implementation used by PurePath and _Flavour"""
+
     filesystem = None
     sep = '/'
     altsep = None
@@ -130,7 +204,6 @@ class _FakeFlavour(pathlib._Flavour):
         return [p.lower() for p in parts]
 
     def resolve(self, path):
-        # todo: adapt error handling
         return self.filesystem.ResolvePath(str(path))
 
     def gethomedir(self, username):
@@ -150,6 +223,9 @@ class _FakeFlavour(pathlib._Flavour):
 
 
 class _FakeWindowsFlavour(_FakeFlavour):
+    """Flavour used by PureWindowsPath with some Windows specific implementations
+    independent of FakeFilesystem properties.
+    """
     reserved_names = (
         {'CON', 'PRN', 'AUX', 'NUL'} |
         {'COM%d' % i for i in range(1, 10)} |
@@ -216,6 +292,10 @@ class _FakeWindowsFlavour(_FakeFlavour):
 
 
 class _FakePosixFlavour(_FakeFlavour):
+    """Flavour used by PurePosixPath with some Unix specific implementations
+    independent of FakeFilesystem properties.
+    """
+
     def is_reserved(self, parts):
         return False
 
@@ -242,50 +322,54 @@ class _FakePosixFlavour(_FakeFlavour):
                                    "for %r" % username)
 
 
-class FakePath(pathlib.PurePath):
+class FakePath(pathlib.Path):
+    """Replacement for pathlib.Path. Reimplement some methods to use fake filesystem.
+    The rest of the methods work as they are, as they will use the fake accessor.
+    """
+
+    # the underlying fake filesystem
     filesystem = None
 
     def __new__(cls, *args, **kwargs):
+        """Creates the correct subclass based on OS."""
         if cls is FakePathlibModule.Path:
             cls = FakePathlibModule.WindowsPath if os.name == 'nt' else FakePathlibModule.PosixPath
         self = cls._from_parts(args, init=True)
         return self
 
     def _path(self):
+        """Returns the underlying path string as used by the fake filesystem."""
         return str(self)
 
-    def _init(self):
+    def _init(self, template=None):
+        """Initializer called from base class."""
+        self._accessor = _fake_accessor
         self._closed = False
-
-    def __enter__(self):
-        if self._closed:
-            self._raise_closed()
-        return self
-
-    def __exit__(self, t, v, tb):
-        self._closed = True
-
-    @staticmethod
-    def _raise_closed():
-        raise ValueError("I/O operation on closed path")
 
     @classmethod
     def cwd(cls):
         """Return a new path pointing to the current working directory
         (as returned by os.getcwd()).
         """
-        return cls.filesystem.cwd
+        return cls(cls.filesystem.cwd)
 
     @classmethod
     def home(cls):
         """Return a new path pointing to the user's home directory (as
         returned by os.path.expanduser('~')).
         """
-        return cls(cls()._flavour.gethomedir(None))
+        return cls(cls()._flavour.gethomedir(None).
+                   replace(os.sep, cls.filesystem.path_separator))
 
     def samefile(self, other_path):
         """Return whether other_path is the same or not as this file
         (as returned by os.path.samefile()).
+
+        Args:
+            other_path: a path object or string of the file object to be compared with
+
+        Raises:
+          OSError: if the filesystem object doesn't exist.
         """
         st = self.stat()
         try:
@@ -294,98 +378,25 @@ class FakePath(pathlib.PurePath):
             other_st = self.filesystem.GetStat(other_path)
         return st.st_ino == other_st.st_ino and st.st_dev == other_st.st_dev
 
-    def iterdir(self):
-        """Iterate over the files in this directory.  Does not yield any
-        result for the special paths '.' and '..'.
-        """
-        if self._closed:
-            self._raise_closed()
-        dir_object = self.filesystem.ResolveObject(self._path())
-        if isinstance(dir_object, FakeDirectory):
-            for content in dir_object.contents:
-                yield content
-                if self._closed:
-                    self._raise_closed()
-
-    # def glob(self, pattern):
-    #     """Iterate over this subtree and yield all existing files (of any
-    #     kind, including directories) matching the given pattern.
-    #     """
-    #     pattern = self._flavour.casefold(pattern)
-    #     drv, root, pattern_parts = self._flavour.parse_parts((pattern,))
-    #     if drv or root:
-    #         raise NotImplementedError("Non-relative patterns are unsupported")
-    #     selector = _make_selector(tuple(pattern_parts))
-    #     for p in selector.select_from(self):
-    #         yield p
-    #
-    # def rglob(self, pattern):
-    #     """Recursively yield all existing files (of any kind, including
-    #     directories) matching the given pattern, anywhere in this subtree.
-    #     """
-    #     pattern = self._flavour.casefold(pattern)
-    #     drv, root, pattern_parts = self._flavour.parse_parts((pattern,))
-    #     if drv or root:
-    #         raise NotImplementedError("Non-relative patterns are unsupported")
-    #     selector = _make_selector(("**",) + tuple(pattern_parts))
-    #     for p in selector.select_from(self):
-    #         yield p
-    #
-    # def absolute(self):
-    #     """Return an absolute version of this path.  This function works
-    #     even if the path doesn't point to anything.
-    #
-    #     No normalization is done, i.e. all '.' and '..' will be kept along.
-    #     Use resolve() to get the canonical path to a file.
-    #     """
-    #     # XXX untested yet!
-    #     if self._closed:
-    #         self._raise_closed()
-    #     if self.is_absolute():
-    #         return self
-    #     # FIXME this must defer to the specific flavour (and, under Windows,
-    #     # use nt._getfullpathname())
-    #     obj = self._from_parts([os.getcwd()] + self._parts, init=False)
-    #     obj._init(template=self)
-    #     return obj
-    #
     def resolve(self):
-        """
-        Make the path absolute, resolving all symlinks on the way and also
-        normalizing it (for example turning slashes into backslashes under
-        Windows).
+        """Make the path absolute, resolving all symlinks on the way and also
+        normalizing it (for example turning slashes into backslashes under Windows).
+
+        Raises:
+            IOError: if the path doesn't exist
         """
         if self._closed:
             self._raise_closed()
         path = self.filesystem.ResolvePath(self._path())
         return FakePath(path)
 
-    def stat(self):
-        """
-        Return the result of the stat() system call on this path, like
-        os.stat() does.
-        """
-        return self.filesystem.GetStat(self._path())
-
-    # def owner(self):
-    #     """
-    #     Return the login name of the file owner.
-    #     """
-    #     import pwd
-    #     return pwd.getpwuid(self.stat().st_uid).pw_name
-    #
-    # def group(self):
-    #     """
-    #     Return the group name of the file gid.
-    #     """
-    #     import grp
-    #     return grp.getgrgid(self.stat().st_gid).gr_name
-    #
     def open(self, mode='r', buffering=-1, encoding=None,
              errors=None, newline=None):
-        """
-        Open the file pointed by this path and return a file object, as
-        the built-in open() function does.
+        """Open the file pointed by this path and return a fake file object.
+
+        Raises:
+            IOError: if the target object is a directory, the path is invalid or
+                permission is denied.
         """
         if self._closed:
             self._raise_closed()
@@ -393,22 +404,30 @@ class FakePath(pathlib.PurePath):
 
     if sys.version_info >= (3, 5):
         def read_bytes(self):
-            """
-            Open the file in bytes mode, read it, and close the file.
+            """Open the fake file in bytes mode, read it, and close the file.
+
+            Raises:
+                IOError: if the target object is a directory, the path is invalid or
+                    permission is denied.
             """
             with FakeFileOpen(self.filesystem)(self._path(), mode='rb') as f:
                 return f.read()
 
         def read_text(self, encoding=None, errors=None):
             """
-            Open the file in text mode, read it, and close the file.
+            Open the fake file in text mode, read it, and close the file.
             """
-            with FakeFileOpen(self.filesystem)(self._path(), mode='r', encoding=encoding, errors=errors) as f:
+            with FakeFileOpen(self.filesystem)(
+                    self._path(), mode='r', encoding=encoding, errors=errors) as f:
                 return f.read()
 
         def write_bytes(self, data):
-            """
-            Open the file in bytes mode, write to it, and close the file.
+            """Open the fake file in bytes mode, write to it, and close the file.
+            Args:
+                data: the bytes to be written
+            Raises:
+                IOError: if the target object is a directory, the path is invalid or
+                    permission is denied.
             """
             # type-check for the buffer interface before truncating the file
             view = memoryview(data)
@@ -416,8 +435,17 @@ class FakePath(pathlib.PurePath):
                 return f.write(view)
 
         def write_text(self, data, encoding=None, errors=None):
-            """
-            Open the file in text mode, write to it, and close the file.
+            """Open the fake file in text mode, write to it, and close the file.
+
+            Args:
+                data: the string to be written
+                encoding: the encoding used for the string; if not given, the
+                    default locale encoding is used
+                errors: ignored
+            Raises:
+                TypeError: if data is not of type 'str'
+                IOError: if the target object is a directory, the path is invalid or
+                    permission is denied.
             """
             if not isinstance(data, str):
                 raise TypeError('data must be str, not %s' %
@@ -426,8 +454,15 @@ class FakePath(pathlib.PurePath):
                 return f.write(data)
 
     def touch(self, mode=0o666, exist_ok=True):
-        """
-        Create this file with the given access mode, if it doesn't exist.
+        """Create a fake file for the path with the given access mode, if it doesn't exist.
+
+        Args:
+            mode: the file mode for the file if it does not exist
+            exist_ok: if the file already exists and this is True, nothinh happens,
+                otherwise FileExistError is raised
+
+        Raises:
+            FileExistsError if the file exists and exits_ok is False.
         """
         if self._closed:
             self._raise_closed()
@@ -441,166 +476,6 @@ class FakePath(pathlib.PurePath):
             fake_file.close()
             self.chmod(mode)
 
-    def mkdir(self, mode=0o777, parents=False, exist_ok=None):
-        if exist_ok is None:
-            exist_ok = False
-        elif sys.version_info < (3, 5):
-            raise TypeError("mkdir() got an unexpected keyword argument 'exist_ok'")
-
-        if self._closed:
-            self._raise_closed()
-        if parents:
-            self.filesystem.MakeDirectories(self._path(), mode, exist_ok)
-        else:
-            try:
-                self.filesystem.MakeDirectory(self._path(), mode)
-            except OSError as e:
-                if e.errno == errno.EEXIST:
-                    if exist_ok and self.is_dir():
-                        return
-                    else:
-                        raise FileExistsError
-                raise
-
-    def chmod(self, mode):
-        """
-        Change the permissions of the path, like os.chmod().
-        """
-        if self._closed:
-            self._raise_closed()
-        self.filesystem.ChangeMode(self._path(), mode)
-
-    def lchmod(self, mode):
-        """
-        Like chmod(), except if the path points to a symlink, the symlink's
-        permissions are changed, rather than its target's.
-        """
-        if self._closed:
-            self._raise_closed()
-        self.filesystem.ChangeMode(self._path(), mode, follow_symlinks=False)
-
-    def unlink(self):
-        """
-        Remove this file or link.
-        If the path is a directory, use rmdir() instead.
-        """
-        if self._closed:
-            self._raise_closed()
-        if self.is_dir() and not self.is_symlink():
-            raise OSError(errno.EISDIR, "'%s' is a directory" % self)
-        try:
-            self.filesystem.RemoveObject(self._path())
-        except IOError as e:
-            raise OSError(e.errno, e.strerror, e.filename)
-
-    def rmdir(self):
-        """
-        Remove this directory.  The directory must be empty.
-        """
-        if self._closed:
-            self._raise_closed()
-        self.filesystem.RemoveDirectory(self._path())
-
-    def lstat(self):
-        """
-        Like stat(), except if the path points to a symlink, the symlink's
-        status information is returned, rather than its target's.
-        """
-        if self._closed:
-            self._raise_closed()
-        return self.filesystem.GetStat(self._path(), follow_symlinks=False)
-
-    def rename(self, target):
-        """
-        Rename this path to the given path.
-        """
-        if self._closed:
-            self._raise_closed()
-        if isinstance(target, FakePath):
-            target = target.path
-        self.filesystem.RenameObject(self._path(), target)
-
-    def replace(self, target):
-        """
-        Rename this path to the given path, clobbering the existing
-        destination if it exists.
-        """
-        if self._closed:
-            self._raise_closed()
-        self.filesystem.RenameObject(self._path(), target, force_replace=True)
-
-    def symlink_to(self, target, target_is_directory=False):
-        """
-        Make this path a symlink pointing to the given path.
-
-        Args:
-            target_is_directory: ignored
-            Note: per description, this parameter is used under Windows only and needed
-                  if destination is a directory; this seems not to be true, at least with Python 3.5,
-                  so we just ignore the argument under both Windows and Unix
-        """
-        if self._closed:
-            self._raise_closed()
-        self.filesystem.CreateLink(self._path(), target)
-
-    def exists(self):
-        """
-        Whether this path exists.
-        """
-        return self.filesystem.Exists(self._path())
-
-    def _is_type(self, st_flag, follow_symlinks=True):
-        try:
-            path_object = self.filesystem.ResolveObject(self._path(), follow_symlinks)
-            if path_object:
-                return stat.S_IFMT(path_object.st_mode) == st_flag
-        except IOError:
-            return False
-        return False
-
-    def is_dir(self):
-        """
-        Whether this path is a directory.
-        """
-        return self._is_type(stat.S_IFDIR)
-
-    def is_file(self):
-        """
-        Whether this path is a regular file (also True for symlinks pointing
-        to regular files).
-        """
-        return self._is_type(stat.S_IFREG)
-
-    def is_symlink(self):
-        """
-        Whether this path is a symbolic link.
-        """
-        return self._is_type(stat.S_IFLNK, follow_symlinks=False)
-
-    def is_block_device(self):
-        """
-        Whether this path is a block device.
-        """
-        return self._is_type(stat.S_IFBLK, follow_symlinks=False)
-
-    def is_char_device(self):
-        """
-        Whether this path is a character device.
-        """
-        return self._is_type(stat.S_IFCHR)
-
-    def is_fifo(self):
-        """
-        Whether this path is a FIFO.
-        """
-        return self._is_type(stat.S_IFIFO)
-
-    def is_socket(self):
-        """
-        Whether this path is a socket.
-        """
-        return self._is_type(stat.S_IFSOCK)
-
     def expanduser(self):
         """ Return a new path with expanded ~ and ~user constructs
         (as returned by os.path.expanduser)
@@ -611,17 +486,18 @@ class FakePath(pathlib.PurePath):
 
 class FakePathlibModule(object):
     """Uses FakeFilesystem to provide a fake pathlib module replacement.
-       Currently only used to wrap pathlib.Path
 
-    # You need a fake_filesystem to use this:
-    filesystem = fake_filesystem.FakeFilesystem()
-    fake_pathlib_module = fake_filesystem.FakePathlibModule(filesystem)
+    You need a fake_filesystem to use this:
+    `filesystem = fake_filesystem.FakeFilesystem()`
+    `fake_pathlib_module = fake_filesystem.FakePathlibModule(filesystem)`
     """
 
     def __init__(self, filesystem):
         """
+        Initializes the module with the given filesystem.
+
         Args:
-          filesystem:  FakeFilesystem used to provide file system information
+            filesystem: FakeFilesystem used to provide file system information
         """
         init_module(filesystem)
         self._pathlib_module = pathlib

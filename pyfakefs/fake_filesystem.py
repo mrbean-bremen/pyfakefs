@@ -1509,12 +1509,13 @@ class FakeFilesystem(object):
 
         return file_object
 
-    def CreateLink(self, file_path, link_target):
+    def CreateLink(self, file_path, link_target, target_is_directory=False):
         """Creates the specified symlink, pointed at the specified link target.
 
         Args:
           file_path:  path to the symlink to create
           link_target:  the target of the symlink
+          target_is_directory: ignored, here to satisfy pathlib API
 
         Returns:
           the newly created FakeFile object
@@ -1667,6 +1668,19 @@ class FakeFilesystem(object):
                           target_directory)
         return directory
 
+    def RemoveFile(self, path):
+        """Removes the FakeFile object representing the specified file."""
+        path = self.NormalizePath(path)
+        try:
+            obj = self.ResolveObject(path)
+            if stat.S_IFMT(obj.st_mode) == stat.S_IFDIR:
+                link_obj = self.LResolveObject(path)
+                if stat.S_IFMT(link_obj.st_mode) != stat.S_IFLNK:
+                    raise OSError(errno.EISDIR, "Is a directory: '%s'" % path)
+            self.RemoveObject(path)
+        except IOError as e:
+            raise OSError(e.errno, e.strerror, e.filename)
+
     def RemoveDirectory(self, target_directory):
         """Remove a leaf Fake directory.
 
@@ -1689,6 +1703,23 @@ class FakeFilesystem(object):
                 self.RemoveObject(target_directory)
             except IOError as e:
                 raise OSError(e.errno, e.strerror, e.filename)
+
+    def ListDir(self, target_directory):
+        """Returns a sorted list of filenames in target_directory.
+
+        Args:
+          target_directory:  path to the target directory within the fake
+            filesystem
+
+        Returns:
+          a sorted list of file names within the target directory
+
+        Raises:
+          OSError:  if the target is not a directory
+        """
+        target_directory = self.ResolvePath(target_directory)
+        directory = self._ConfirmDir(target_directory)
+        return sorted(directory.contents)
 
     def __str__(self):
         return str(self.root)
@@ -2160,9 +2191,7 @@ class FakeOsModule(object):
         Raises:
           OSError:  if the target is not a directory
         """
-        target_directory = self.filesystem.ResolvePath(target_directory)
-        directory = self.filesystem._ConfirmDir(target_directory)
-        return sorted(directory.contents)
+        return self.filesystem.ListDir(target_directory)
 
     if sys.version_info >= (3, 5):
         class DirEntry():
@@ -2370,13 +2399,7 @@ class FakeOsModule(object):
 
     def remove(self, path):
         """Removes the FakeFile object representing the specified file."""
-        path = self.filesystem.NormalizePath(path)
-        if self.path.isdir(path) and not self.path.islink(path):
-            raise OSError(errno.EISDIR, "Is a directory: '%s'" % path)
-        try:
-            self.filesystem.RemoveObject(path)
-        except IOError as e:
-            raise OSError(e.errno, e.strerror, e.filename)
+        self.filesystem.RemoveFile(path)
 
     # As per the documentation unlink = remove.
     unlink = remove

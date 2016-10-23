@@ -130,6 +130,7 @@ class FakePathlibInitializationWithDriveTest(unittest.TestCase):
 
 class FakePathlibPurePathTest(unittest.TestCase):
     """Tests functionality present in PurePath class."""
+
     def setUp(self):
         filesystem = fake_filesystem.FakeFilesystem(path_separator='/')
         filesystem.supports_drive_letter = True
@@ -178,27 +179,6 @@ class FakePathlibPurePathTest(unittest.TestCase):
                          self.path('c:/Downloads/pathlib.tar.bz2'))
         self.assertEqual(self.path('README').with_suffix('.txt'),
                          self.path('README.txt'))
-
-
-class FakePathlibPathTest(unittest.TestCase):
-    def setUp(self):
-        self.filesystem = fake_filesystem.FakeFilesystem(path_separator='/')
-        self.filesystem.supports_drive_letter = False
-        self.filesystem.is_case_sensitive = True
-        pathlib = fake_pathlib.FakePathlibModule(self.filesystem)
-        self.path = pathlib.Path
-
-    def test_cwd(self):
-        self.filesystem.cwd = '/home/jane'
-        self.assertEqual(self.path.cwd(), '/home/jane')
-
-    def test_expanduser(self):
-        if is_windows:
-            self.assertEqual(self.path('~').expanduser(),
-                             self.path(os.environ['USERPROFILE'].replace('\\', '/')))
-        else:
-            self.assertEqual(self.path('~').expanduser(),
-                             self.path(os.environ['HOME']))
 
 
 class FakePathlibFileObjectPropertyTest(unittest.TestCase):
@@ -277,9 +257,12 @@ class FakePathlibFileObjectPropertyTest(unittest.TestCase):
     def test_lchmod(self):
         file_object = self.filesystem.ResolveObject('/home/jane/test.py')
         link_object = self.filesystem.LResolveObject('/test.py')
-        self.path('/test.py').lchmod(0o444)
-        self.assertEqual(file_object.st_mode, stat.S_IFREG | 0o666)
-        self.assertEqual(link_object.st_mode, stat.S_IFLNK | 0o444)
+        if is_windows:
+            self.assertRaises(NotImplementedError, self.path('/test.py').lchmod, 0o444)
+        else:
+            self.path('/test.py').lchmod(0o444)
+            self.assertEqual(file_object.st_mode, stat.S_IFREG | 0o666)
+            self.assertEqual(link_object.st_mode, stat.S_IFLNK | 0o444)
 
     def test_resolve(self):
         self.filesystem.cwd = '/home/antoine'
@@ -289,6 +272,26 @@ class FakePathlibFileObjectPropertyTest(unittest.TestCase):
                          self.path('/home/antoine'))
         self.assertEqual(self.path('docs/../setup.py').resolve(),
                          self.path('/home/antoine/setup.py'))
+
+    def test_cwd(self):
+        self.filesystem.cwd = '/home/jane'
+        self.assertEqual(self.path.cwd(), self.path('/home/jane'))
+
+    def test_expanduser(self):
+        if is_windows:
+            self.assertEqual(self.path('~').expanduser(),
+                             self.path(os.environ['USERPROFILE'].replace('\\', '/')))
+        else:
+            self.assertEqual(self.path('~').expanduser(),
+                             self.path(os.environ['HOME']))
+
+    def test_home(self):
+        if is_windows:
+            self.assertEqual(self.path.home(),
+                             self.path(os.environ['USERPROFILE'].replace('\\', '/')))
+        else:
+            self.assertEqual(self.path.home(),
+                             self.path(os.environ['HOME']))
 
 
 class FakePathlibPathFileOperationTest(unittest.TestCase):
@@ -393,8 +396,11 @@ class FakePathlibPathFileOperationTest(unittest.TestCase):
         self.assertRaises(OSError, self.path('/foo/other').samefile, '/foo/other.txt')
         path = self.path('/foo/bar.txt')
         self.assertRaises(OSError, path.samefile, '/foo/other.txt')
+        self.assertRaises(OSError, path.samefile, self.path('/foo/other.txt'))
         self.assertFalse(path.samefile('/foo/baz.txt'))
+        self.assertFalse(path.samefile(self.path('/foo/baz.txt')))
         self.assertTrue(path.samefile('/foo/../foo/bar.txt'))
+        self.assertTrue(path.samefile(self.path('/foo/../foo/bar.txt')))
 
     def test_symlink_to(self):
         self.filesystem.CreateFile('/foo/bar.txt')
@@ -436,7 +442,16 @@ class FakePathlibPathFileOperationTest(unittest.TestCase):
         path = self.path('/foo/bar')
         contents = [entry for entry in path.iterdir()]
         self.assertEqual(3, len(contents))
-        self.assertIn('file2', contents)
+        self.assertIn(self.path('/foo/bar/file2'), contents)
+
+    def test_glob(self):
+        self.filesystem.CreateFile('/foo/setup.py')
+        self.filesystem.CreateFile('/foo/all_tests.py')
+        self.filesystem.CreateFile('/foo/README.md')
+        self.filesystem.CreateFile('/foo/setup.pyc')
+        path = self.path('/foo')
+        self.assertEqual(sorted(path.glob('*.py')),
+                         [self.path('/foo/all_tests.py'), self.path('/foo/setup.py')])
 
 if __name__ == '__main__':
     unittest.main()

@@ -1603,7 +1603,7 @@ class FakeOsModuleTest(FakeOsModuleTestBase):
 
         st = self.os.stat(link_path)
         self.assertModeEqual(0o666, st.st_mode)
-        st = self.os.stat(link_path, follow_symlinks=False)
+        st = self.os.lstat(link_path)
         self.assertModeEqual(0o6543, st.st_mode)
 
     def testChmodDir(self):

@@ -25,5 +25,10 @@ python:
 install:
   - if [[ $TRAVIS_PYTHON_VERSION == 2.6 ]]; then pip install importlib unittest2; fi
   - pip install -r requirements.txt
+  - pip install codecov
 
-script: ./all_tests.py
+script:
+   coverage run --branch --source=pyfakefs ./all_tests.py
+
+after_success:
+  - codecov

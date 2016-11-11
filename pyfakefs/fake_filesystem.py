@@ -1012,7 +1012,8 @@ class FakeFilesystem(object):
           (str) The paths joined by the path separator, starting with the last
               absolute path in paths.
         """
-        paths = [os.fspath(path) for path in paths]
+        if sys.version_info >= (3, 6):
+            paths = [os.fspath(path) for path in paths]
         if len(paths) == 1:
             return paths[0]
         if self.supports_drive_letter:

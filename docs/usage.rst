@@ -500,9 +500,9 @@ contains the default argument instead, if you want to avoid the overhead.
 
 use_cache
 .........
-If True (default), patched and non-patched modules are cached between tests
+If True (the default), patched and non-patched modules are cached between tests
 to avoid the performance hit of the file system function lookup (the
-patching is self is reverted after each test as before). As this is a new
+patching itself is reverted after each test as before). As this is a new
 feature, this argument allows to turn it off in case it causes any problems.
 Note that this parameter may be removed in a later version. If you want to
 clear the cache just for a specific test instead, you can call
@@ -533,8 +533,8 @@ in the path, you may use ``create_file()``, ``create_dir()`` and
 ``create_file()`` also allows you to set the file mode and the file contents
 together with the encoding if needed. Alternatively, you can define a file
 size without contents--in this case, you will not be able to perform
-standard I\O operations on the file (may be used to "fill up" the file system
-with large files).
+standard I\O operations on the file (may be used to fill up the file system
+with large files, see also :ref:`set-fs-size`).
 
 .. code:: python
 
@@ -641,6 +641,8 @@ A mount point has a separate device ID (``st_dev``) under all systems, and
 some operations (like ``rename``) are not possible for files located on
 different mount points. The fake file system size (if used) is also set per
 mount point.
+
+.. _set-fs-size:
 
 Setting the file system size
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~

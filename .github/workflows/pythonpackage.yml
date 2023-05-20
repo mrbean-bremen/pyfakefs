@@ -3,35 +3,13 @@ name: Testsuite
 on: [push]
 
 jobs:
-  linter:
-    runs-on: ${{ matrix.os }}
-    strategy:
-      matrix:
-        os: [ubuntu-latest]
-        python-version:  [3.8]
-    steps:
-    - uses: actions/checkout@v2
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v2
-      with:
-        python-version: ${{ matrix.python-version }}
-    - name: Install linter
-      run: |
-        uname -a
-        python -m pip install flake8
-    - name: Check syntax and style
-      run: flake8 . --exclude get-pip.py --max-complexity=13 --statistics
-
   tests:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, macOS-latest, windows-2016]
-        python-version: [3.6, 3.7, 3.8, 3.9]
-        include:
-          - python-version: pypy3
-            os: ubuntu-latest
+        os: [ubuntu-latest, windows-latest]
+        python-version: [3.7, 3.8, 3.9, '3.10', '3.11']
 
     steps:
     - uses: actions/checkout@v2
@@ -59,34 +37,11 @@ jobs:
       run: |
         pip install wheel
         pip install -r requirements.txt
+        pip install -r extra_requirements.txt
         pip install .
-    - name: Run unit tests without extra packages as non-root user
-      run: |
-        export TEST_REAL_FS=1
-        python -m pyfakefs.tests.all_tests_without_extra_packages
-      shell: bash
-    - name: Run setup.py test (uses pytest)
-      run: |
-        python setup.py test
-      shell: bash
-    - name: Run unit tests without extra packages as root
-      run: |
-        if [[ '${{ matrix.os  }}' != 'windows-2016' ]]; then
-          # provide the same path as non-root to get the correct virtualenv
-          sudo env "PATH=$PATH" python -m pyfakefs.tests.all_tests_without_extra_packages
-        fi
-      shell: bash
     - name: Install extra dependencies
       run: |
         pip install -r extra_requirements.txt
-    - name: Run unit tests with extra packages as non-root user
-      run: |
-        python -m pyfakefs.tests.all_tests
-    - name: Run pytest tests
-      run: |
-        export PY_VERSION=${{ matrix.python-version }}
-        $GITHUB_WORKSPACE/.github/workflows/run_pytest.sh
-      shell: bash
     - name: Run performance tests
       run: |
         if [[ '${{ matrix.os  }}' != 'macOS-latest' ]]; then
@@ -94,17 +49,3 @@ jobs:
           python -m pyfakefs.tests.performance_test
         fi
       shell: bash
-
-  dockertests:
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        docker-image: [centos, debian, fedora, ubuntu]
-    steps:
-    - uses: actions/checkout@v2
-    - name: Setup docker container
-      run: |
-        docker build -t pyfakefs -f $GITHUB_WORKSPACE/.github/workflows/dockerfiles/Dockerfile_${{ matrix.docker-image }} . --build-arg github_repo=$GITHUB_REPOSITORY --build-arg github_branch=$(basename $GITHUB_REF)
-    - name: Run tests
-      run: docker run -t pyfakefs

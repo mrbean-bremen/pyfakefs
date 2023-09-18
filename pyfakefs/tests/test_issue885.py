@@ -1,4 +1,5 @@
 import io
+import os
 import pathlib
 import platform
 import zipfile
@@ -17,9 +18,12 @@ class MyTest(pyfakefs_ut.TestCase):
         print(f"{pyfakefs.__version__=}")
         print(f"{pytest.__version__=}")
 
+        print(f"before setUpClassPyfakefs() :: {os.getcwd()=}")
         cls.setUpClassPyfakefs(allow_root_user=False)
 
         zip_filepath = pathlib.Path.cwd() / "foo.zip"
+        print(f"{str(zip_filepath)=}")
+        print(f"after setUpClassPyfakefs() :: {os.getcwd()=}")
 
         with zipfile.ZipFile(zip_filepath, "w") as zip_handle:
             with zip_handle.open("nice.txt", "w") as entry_handle:
@@ -37,7 +41,9 @@ class MyTest(pyfakefs_ut.TestCase):
         self.assertTrue(zip_filepath.exists())
 
         # read
-        with zip_filepath.open("rb") as handle:
+        # with zip_filepath.open('rb') as handle:
+        print("X" * 55)
+        with open(str(zip_filepath), "rb") as handle:
             print("T" * 55)
             stream = io.BytesIO(handle.read())
         print("U" * 55)

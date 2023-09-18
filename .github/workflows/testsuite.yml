@@ -10,14 +10,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-20.04, macOS-latest, windows-latest]
-        python-version: [3.8, 3.9, "3.10", "3.11", "3.12-dev"]
-        include:
-          - python-version: "pypy-3.7"
-            os: ubuntu-latest
-          - python-version: "pypy-3.9"
-            os: ubuntu-latest
-          - python-version: "pypy-3.10"
-            os: ubuntu-latest
+        python-version: ["3.8", 3.9, "3.10", "3.11", "3.12-dev"]
+        pytest-version: [ "4.0.2", "4.6.11", "5.0.1", "5.4.3", "6.0.1", "6.1.2", "6.2.5", "7.0.1", "7.1.3", "7.2.2", "7.3.2", "7.4.2"]
 
     steps:
     - uses: actions/checkout@v3
@@ -32,21 +26,12 @@ jobs:
         python -m pip install --upgrade pip
         echo "::set-output name=dir::$(pip cache dir)"
 
-    - name: Cache dependencies
-      id: cache-dep
-      uses: actions/cache@v3
-      with:
-        path: ${{ steps.pip-cache.outputs.dir }}
-        key: ${{ matrix.os }}-${{ matrix.python-version }}-pip-${{ hashFiles('**/requirements.txt') }}-${{ hashFiles('**/extra_requirements.txt') }}
-        restore-keys: |
-          ${{ matrix.os }}-${{ matrix.python-version }}-pip-
-
     - name: Install dependencies
       run: |
         pip install setuptools wheel
-        pip install -r requirements.txt
+        pip install pytest==${{ matrix.pytest-version }}
 
     - name: Run unit tests without extra packages as non-root user
       run: |
-        python -m pytest pyfakefs/tests/test_issue885.py
+        python -m pytest pyfakefs/tests/test_issue885.py -vsx
       shell: bash

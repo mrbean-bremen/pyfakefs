@@ -103,7 +103,7 @@ class TempfilePatcher:
     def start_patching(self):
         if self.tempfile_cleanup is not None:
             return
-        if sys.version_info >= (3, 12):
+        if sys.version_info >= (3, 13):
 
             def cleanup(self_, windows=(os.name == "nt"), unlink=None):
                 self.tempfile_cleanup(self_, windows, unlink or os.unlink)
@@ -1028,7 +1028,7 @@ class Patcher:
             self._patching = True
             self._paused = False
 
-            if sys.version_info >= (3, 12):
+            if sys.version_info >= (3, 13):
                 # in linecache, 'os' is now imported locally, which involves the
                 # dynamic patcher, therefore we patch the affected functions
                 self.linecache_updatecache = linecache.updatecache

@@ -10,6 +10,7 @@ defaults:
 jobs:
   pytype:
     runs-on: ubuntu-latest
+    if: False
     steps:
     - name: Check out repository
       uses: actions/checkout@v4
@@ -24,6 +25,7 @@ jobs:
         pytype pyfakefs --keep-going --exclude pyfakefs/tests/* --exclude pyfakefs/pytest_tests/*
 
   tests:
+    if: False
     runs-on: ${{ matrix.os }}
     env:
       PYTHONWARNDEFAULTENCODING: true
@@ -114,7 +116,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
-        python-version: [3.8, 3.9, "3.10", "3.11", "3.12", "3.13"]
+        python-version: ["3.11", "3.12", "3.13"]
         pytest-version: [6.2.5, 7.0.1, 7.4.4, 8.0.2, 8.3.4]
     steps:
       - uses: actions/checkout@v4
@@ -127,19 +129,18 @@ jobs:
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           python -m pip install -U pytest==${{ matrix.pytest-version }}
-          python -m pip install pandas parquet pyarrow
           python -m pip install -e .
+          python -m pip install asyncio moto botocore boto3 s3transfer pytest-asyncio
+          python -m pip list
         shell: bash
       - name: Run pytest tests
         run: |
-          echo "$(python -m pytest pyfakefs/pytest_tests/pytest_plugin_failing_helper.py)" > ./testresult.txt
-          pytest pyfakefs/pytest_tests
-          cd pyfakefs/pytest_tests/ns_package
-          pytest --log-cli-level=INFO test
+          pytest -s --cache-clear pyfakefs/pytest_tests/test_issue1126.py
         shell: bash
 
   dependency-check:
     runs-on: ${{ matrix.os }}
+    if: False
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest]

@@ -5,13 +5,15 @@ The released versions correspond to PyPI releases.
 * support for new versions is usually added preliminarily during the Python release beta phase,
   official support after the final release
 * support for EOL versions is removed as soon as the CI (GitHub actions) does no longer provide
-  these versions (usually several months after the official EOL)
+  these versions (usually several months after the official EOL), or after about a year after EOL,
+  whichever is earlier
 
-## Planned changes for next major release (6.0.0)
-* support for patching legacy modules `scandir` and `pathlib2` will be removed
-* the default for `FakeFilesystem.shuffle_listdir_results` will change to `True` to reflect
+### Changes
+* patching legacy modules `scandir` and `pathlib2` is no longer supported
+* Python versions before 3.10 are no longer supported (if needed, patches may be backported to the 5.x branch)
+* the default for `FakeFilesystem.shuffle_listdir_results` changed to `True` to reflect
   the real filesystem behavior
-* remove support for Python versions before 3.10 (if needed, patches may be backported to the 5.x branch)
+
 
 ## [Version 5.9.0](https://pypi.python.org/pypi/pyfakefs/5.8.0) (2025-06-21)
 Adds support for an API change in latest Python patch releases.

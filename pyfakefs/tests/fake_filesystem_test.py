@@ -1022,7 +1022,6 @@ class FakePathModuleTest(TestCase):
         self.os.chdir("!first!president")
         self.assertEqual("!george!washington!bridge", self.os.path.realpath("bridge"))
 
-    @unittest.skipIf(sys.version_info < (3, 10), "'strict' new in Python 3.10")
     def test_realpath_strict(self):
         self.filesystem.create_file("!foo!bar")
         root_dir = self.filesystem.root_dir_name
@@ -1115,9 +1114,7 @@ class FakePathModuleTest(TestCase):
         components = [b"foo", b"bar", b"baz"]
         self.assertEqual(b"foo!bar!baz", self.path.join(*components))
 
-    @unittest.skipIf(
-        sys.platform != "win32" or sys.version_info < (3, 8), "Windows specific test"
-    )
+    @unittest.skipIf(sys.platform != "win32", "Windows specific test")
     @patch.dict(os.environ, {"USERPROFILE": r"C:\Users\John"})
     def test_expand_user_windows(self):
         self.assertEqual(self.path.expanduser("~"), "C:!Users!John")
@@ -1278,17 +1275,6 @@ class FakePathModuleTest(TestCase):
     def test_getattr_forward_to_real_os_path(self):
         """Forwards any non-faked calls to os.path."""
         self.assertTrue(hasattr(self.path, "sep"), "Get a faked os.path function")
-        private_path_function = None
-        if sys.version_info < (3, 6):
-            if self.is_windows:
-                private_path_function = "_get_bothseps"
-            else:
-                private_path_function = "_join_real_path"
-        if private_path_function:
-            self.assertTrue(
-                hasattr(self.path, private_path_function),
-                "Get a real os.path function not implemented in fake os.path",
-            )
         self.assertFalse(hasattr(self.path, "nonexistent"))
 
     def test_splitroot_posix(self):
@@ -2630,8 +2616,6 @@ class RealFileSystemAccessTest(RealFsTestCase):
         self.check_writable_file(fake_file, real_file_path)
 
     @unittest.skipIf(pytest is None, "pytest is not installed")
-    @unittest.skipIf(sys.version_info < (3, 8), "importlib.metadata not available")
-    @unittest.skipIf("pathlib2" in sys.modules, "pathlib2 may break this test")
     def test_add_package_metadata(self):
         parent_path = pathlib.Path(pytest.__file__).parent.parent
         pytest_dist_path = parent_path / f"pytest-{pytest.__version__}.dist-info"

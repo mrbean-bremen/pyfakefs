@@ -16,10 +16,6 @@ Excludes tests using external scandir package."""
 import sys
 import unittest
 
-from pyfakefs import legacy_packages
-
-legacy_packages.scandir = None
-legacy_packages.pathlib2 = None
 
 from pyfakefs.tests.all_tests import AllTests  # noqa: E402
 

@@ -36,7 +36,8 @@ import re
 import sys
 import warnings
 from pathlib import PurePath
-from typing import Callable, List, Optional
+
+from collections.abc import Callable
 from unittest import mock
 from urllib.parse import quote_from_bytes as urlquote_from_bytes
 
@@ -173,11 +174,6 @@ class _FakeAccessor(accessor):  # type: ignore[valid-type, misc]
 
     def chmod(self, pathobj, *args, **kwargs):
         if "follow_symlinks" in kwargs:
-            if sys.version_info < (3, 10):
-                raise TypeError(
-                    "chmod() got an unexpected keyword argument 'follow_symlinks'"
-                )
-
             if not kwargs["follow_symlinks"] and (
                 os.chmod not in os.supports_follow_symlinks or IS_PYPY
             ):
@@ -208,25 +204,23 @@ class _FakeAccessor(accessor):  # type: ignore[valid-type, misc]
         os.symlink,
     )
 
-    if (3, 8) <= sys.version_info:
-        link_to = _wrap_binary_strfunc(
-            lambda fs, file_path, link_target: FakeFilesystem.link(
-                fs, file_path, link_target
-            ),
-            os.link,
-        )
+    link_to = _wrap_binary_strfunc(
+        lambda fs, file_path, link_target: FakeFilesystem.link(
+            fs, file_path, link_target
+        ),
+        os.link,
+    )
 
-    if sys.version_info >= (3, 10):
-        link = _wrap_binary_strfunc(
-            lambda fs, file_path, link_target: FakeFilesystem.link(
-                fs, file_path, link_target
-            ),
-            os.link,
-        )
+    link = _wrap_binary_strfunc(
+        lambda fs, file_path, link_target: FakeFilesystem.link(
+            fs, file_path, link_target
+        ),
+        os.link,
+    )
 
-        # this will use the fake filesystem because os is patched
-        def getcwd(self):
-            return os.getcwd()
+    # this will use the fake filesystem because os is patched
+    def getcwd(self):
+        return os.getcwd()
 
     readlink = _wrap_strfunc(FakeFilesystem.readlink, os.readlink)
 
@@ -516,7 +510,7 @@ if sys.version_info < (3, 12):
         """
 
         sep = "/"
-        altsep: Optional[str] = None
+        altsep: str | None = None
         has_drv = False
         pathmod = posixpath
 
@@ -592,7 +586,7 @@ class FakePath(pathlib.Path):
 
     # the underlying fake filesystem
     filesystem = None
-    skip_names: List[str] = []
+    skip_names: list[str] = []
 
     def __new__(cls, *args, **kwargs):
         """Creates the correct subclass based on OS."""
@@ -635,8 +629,6 @@ class FakePath(pathlib.Path):
             """Initializer called from base class."""
             # only needed until Python 3.10
             self._accessor = _fake_accessor
-            # only needed until Python 3.8
-            self._closed = False
 
     def _path(self):
         """Returns the underlying path string as used by the fake
@@ -667,7 +659,6 @@ class FakePath(pathlib.Path):
             """
             if strict is None:
                 strict = False
-            self._raise_on_closed()
             path = self._flavour.resolve(
                 self, strict=strict
             )  # pytype: disable=attribute-error
@@ -684,7 +675,6 @@ class FakePath(pathlib.Path):
             OSError: if the target object is a directory, the path is invalid
                 or permission is denied.
         """
-        self._raise_on_closed()
         return fake_open(
             self.filesystem,
             self.skip_names,
@@ -761,8 +751,6 @@ class FakePath(pathlib.Path):
         """
         if not isinstance(data, str):
             raise TypeError("data must be str, not %s" % data.__class__.__name__)
-        if newline is not None and sys.version_info < (3, 10):
-            raise TypeError("write_text() got an unexpected keyword argument 'newline'")
         with fake_open(
             self.filesystem,
             self.skip_names,
@@ -818,10 +806,6 @@ class FakePath(pathlib.Path):
             )
         )
 
-    def _raise_on_closed(self):
-        if sys.version_info < (3, 9) and self._closed:
-            self._raise_closed()
-
     def touch(self, mode=0o666, exist_ok=True):
         """Create a fake file for the path with the given access mode,
         if it doesn't exist.
@@ -834,7 +818,6 @@ class FakePath(pathlib.Path):
         Raises:
             FileExistsError: if the file exists and ``exits_ok`` is `False`.
         """
-        self._raise_on_closed()
         if self.exists():
             if exist_ok:
                 self.filesystem.utime(self._path(), times=None)

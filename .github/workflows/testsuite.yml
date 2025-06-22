@@ -18,7 +18,7 @@ jobs:
       with:
         python-version: "3.10"
     - name: install pytype
-      run: pip install setuptools pytype pytest scandir pathlib2 pandas xlrd django pyarrow
+      run: pip install setuptools pytype pytest pandas xlrd django pyarrow
     - name: Run pytype
       run: |
         pytype pyfakefs --keep-going --exclude pyfakefs/tests/* --exclude pyfakefs/pytest_tests/*
@@ -32,18 +32,10 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
-        python-version: [3.8, 3.9, "3.10", "3.11", "3.12", "3.13", "3.14"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
         include:
-          - python-version: "pypy-3.7"
-            os: ubuntu-22.04
-          - python-version: "pypy-3.9"
-            os: ubuntu-latest
           - python-version: "pypy-3.10"
             os: ubuntu-latest
-          - python-version: "3.7"
-            os: ubuntu-22.04
-          - python-version: "3.7"
-            os: windows-latest
 
     steps:
     - uses: actions/checkout@v4
@@ -65,7 +57,7 @@ jobs:
       uses: actions/cache@v4
       with:
         path: ${{ steps.pip-cache.outputs.dir }}
-        key: ${{ matrix.os }}-${{ matrix.python-version }}-pip-${{ hashFiles('**/requirements.txt') }}-${{ hashFiles('**/extra_requirements.txt') }}-${{ hashFiles('**/legacy_requirements.txt') }}
+        key: ${{ matrix.os }}-${{ matrix.python-version }}-pip-${{ hashFiles('**/requirements.txt') }}-${{ hashFiles('**/extra_requirements.txt') }}
         restore-keys: |
           ${{ matrix.os }}-${{ matrix.python-version }}-pip-
 
@@ -89,7 +81,6 @@ jobs:
       if: ${{ matrix.python-version != '3.14' }}
       run: |
         pip install -r extra_requirements.txt
-        pip install -r legacy_requirements.txt
         pip install zstandard cffi  # needed to test #910
       shell: bash
     - name: Run unit tests with extra packages as non-root user
@@ -114,8 +105,8 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macOS-latest, windows-latest]
-        python-version: [3.8, 3.9, "3.10", "3.11", "3.12", "3.13"]
-        pytest-version: [6.2.5, 7.0.1, 7.4.4, 8.0.2, 8.3.4]
+        python-version: ["3.10", "3.11", "3.12", "3.13"]
+        pytest-version: [6.2.5, 7.0.1, 7.4.4, 8.0.2, 8.4.1]
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python ${{ matrix.python-version }}
@@ -154,7 +145,6 @@ jobs:
         run: |
           pip install -r requirements.txt
           pip install -r extra_requirements.txt
-          pip install -r legacy_requirements.txt
           pip install pytest-find-dependencies
       - name: Check dependencies
         run: python -m pytest --find-dependencies pyfakefs/tests

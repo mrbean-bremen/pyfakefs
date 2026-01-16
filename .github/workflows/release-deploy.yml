@@ -3,6 +3,9 @@ name: release-deploy
 on:
   release:
     types: [ published ]
+  push:
+    branches:
+      test-release
 
 jobs:
 
@@ -14,7 +17,7 @@ jobs:
     strategy:
       fail-fast: true
       matrix:
-        python-version: [ '3.10' ]
+        python-version: [ '3.13' ]
 
     steps:
     - uses: actions/checkout@v6
@@ -30,5 +33,7 @@ jobs:
         python -m pip install build
         python -m build
 
-    - name: Publish package to PyPI
+    - name: Publish package to PyPI Test
       uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/

@@ -53,18 +53,19 @@ homepage = "https://github.com/pytest-dev/pyfakefs"
 repository = "https://github.com/pytest-dev/pyfakefs"
 changelog = "https://github.com/pytest-dev/pyfakefs/blob/main/CHANGES.md"
 
-[dependency-groups]
+[project.optional-dependencies]
 dev = [
     "pytest>=6.2.5",
     "pre-commit>=4.1.4",
 ]
 doc = [
     "sphinx>=7.0.0",
-    "furo>=2024.8.6"
+    "furo==2025.12.19",
+    "myst-parser==5.0.0"
 ]
 extra = [
-    "pandas==2.2.3",
-    "xlrd==2.0.1",
+    "pandas==2.3.3",
+    "xlrd==2.0.2",
     "openpyxl==3.1.5",
 ]
 xdist = [
@@ -73,6 +74,7 @@ xdist = [
 
 [tool.setuptools]
 include-package-data = true
+packages = ["pyfakefs"]
 
 [tool.setuptools.package-data]
 where = ["pyfakefs"]

@@ -3,6 +3,9 @@ name: release-deploy
 on:
   release:
     types: [ published ]
+  push:
+    branches:
+      pkg-tests
 
 jobs:
 
@@ -30,5 +33,7 @@ jobs:
         python -m pip install build
         python -m build
 
-    - name: Publish package to PyPI
+    - name: Publish package to PyPI Test
       uses: pypa/gh-action-pypi-publish@release/v1
+      with:
+        repository-url: https://test.pypi.org/legacy/

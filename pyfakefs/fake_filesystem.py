@@ -2867,8 +2867,6 @@ class FakeFilesystem:
                 if self.is_windows_fs:
                     error = errno.ENOTDIR
                 elif self._is_circular_link(link_obj):
-                    if self.is_macos:
-                        return link_obj.path  # type: ignore[return-value]
                     error = errno.ELOOP
                 else:
                     error = errno.ENOENT
@@ -3022,6 +3020,8 @@ class FakeFilesystem:
                 self.raise_for_filepath_ending_with_separator(
                     file_path, obj, macos_handling=not follow_symlinks
                 )
+                if self.is_macos and self.ends_with_path_separator(file_path):
+                    return False
                 return S_IFMT(obj.st_mode) == st_flag
         except OSError:
             return False

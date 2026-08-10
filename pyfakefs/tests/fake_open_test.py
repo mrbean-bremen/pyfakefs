@@ -24,9 +24,9 @@ import time
 import unittest
 
 from pyfakefs import fake_filesystem, helpers
-from pyfakefs.helpers import is_root, IS_PYPY, get_locale_encoding
+from pyfakefs.fake_filesystem_unittest import Patcher, PatchMode
 from pyfakefs.fake_io import FakeIoModule
-from pyfakefs.fake_filesystem_unittest import PatchMode, Patcher
+from pyfakefs.helpers import IS_PYPY, get_locale_encoding, is_root
 from pyfakefs.tests.skipped_pathlib import read_open
 from pyfakefs.tests.test_utils import RealFsTestCase, skip_if_symlink_not_supported
 

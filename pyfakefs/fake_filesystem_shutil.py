@@ -34,8 +34,8 @@ import functools
 import os
 import shutil
 import sys
-from threading import RLock
 from collections.abc import Callable
+from threading import RLock
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:

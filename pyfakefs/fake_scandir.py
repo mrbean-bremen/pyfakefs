@@ -21,7 +21,7 @@ import sys
 import weakref
 from typing import TYPE_CHECKING
 
-from pyfakefs.helpers import to_string, make_string_path, IS_PYPY
+from pyfakefs.helpers import IS_PYPY, make_string_path, to_string
 
 if TYPE_CHECKING:
     from pyfakefs.fake_filesystem import FakeFilesystem

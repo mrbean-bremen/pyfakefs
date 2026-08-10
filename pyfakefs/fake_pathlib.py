@@ -35,9 +35,8 @@ import posixpath
 import re
 import sys
 import warnings
-from pathlib import PurePath
-
 from collections.abc import Callable
+from pathlib import PurePath
 from typing import Any, Union
 from unittest import mock
 from urllib.parse import quote_from_bytes as urlquote_from_bytes
@@ -47,8 +46,7 @@ from pyfakefs.fake_filesystem import FakeFilesystem
 from pyfakefs.fake_open import fake_open
 from pyfakefs.fake_os import FakeOsModule, use_original_os
 from pyfakefs.fake_path import FakePathModule
-from pyfakefs.helpers import IS_PYPY, is_called_from_skipped_module, FSType
-
+from pyfakefs.helpers import IS_PYPY, FSType, is_called_from_skipped_module
 
 _WIN_RESERVED_NAMES = (
     {"CON", "PRN", "AUX", "NUL"}

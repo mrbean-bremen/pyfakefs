@@ -25,29 +25,29 @@ from stat import (
     S_ISDIR,
 )
 from typing import (
-    Any,
-    cast,
-    AnyStr,
-    TYPE_CHECKING,
     IO,
+    TYPE_CHECKING,
+    Any,
+    AnyStr,
+    cast,
 )
 
-from pyfakefs.fake_file import (
-    FakeBinaryFileWrapper,
-    FakeTextFileWrapper,
-    FakePipeWrapper,
-    FakeFileWrapper,
-    FakeFile,
-    AnyFileWrapper,
-)
 from pyfakefs import helpers
+from pyfakefs.fake_file import (
+    AnyFileWrapper,
+    FakeBinaryFileWrapper,
+    FakeFile,
+    FakeFileWrapper,
+    FakePipeWrapper,
+    FakeTextFileWrapper,
+)
 from pyfakefs.helpers import (
-    AnyString,
-    is_called_from_skipped_module,
-    is_root,
     PERM_READ,
     PERM_WRITE,
+    AnyString,
     _OpenModes,
+    is_called_from_skipped_module,
+    is_root,
     is_unfaked_path,
 )
 

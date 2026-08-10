@@ -22,38 +22,37 @@ import os
 import sys
 import traceback
 import weakref
+from collections.abc import Callable, Iterator
 from stat import (
-    S_IFREG,
     S_IFDIR,
+    S_IFREG,
 )
 from types import TracebackType
 from typing import (
-    Union,
+    TYPE_CHECKING,
     Any,
-    cast,
     AnyStr,
     NoReturn,
     TextIO,
-    TYPE_CHECKING,
+    Union,
+    cast,
 )
-
-from collections.abc import Callable, Iterator
 
 from pyfakefs import helpers
 from pyfakefs.helpers import (
-    FakeStatResult,
-    BinaryBufferIO,
-    TextBufferIO,
-    is_int_type,
-    is_unicode_string,
-    to_string,
-    matching_string,
-    real_encoding,
     AnyPath,
     AnyString,
-    get_locale_encoding,
+    BinaryBufferIO,
+    FakeStatResult,
+    TextBufferIO,
     _OpenModes,
+    get_locale_encoding,
+    is_int_type,
     is_root,
+    is_unicode_string,
+    matching_string,
+    real_encoding,
+    to_string,
 )
 
 if TYPE_CHECKING:

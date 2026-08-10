@@ -3,9 +3,9 @@
 import os
 import tempfile
 
+import pyfakefs.pytest_tests.io
 from pyfakefs.fake_filesystem import OSType
 from pyfakefs.fake_filesystem_unittest import Pause
-import pyfakefs.pytest_tests.io
 
 
 def test_fs_fixture(fs):

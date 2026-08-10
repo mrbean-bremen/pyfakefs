@@ -37,13 +37,13 @@ from unittest import TestCase, mock
 
 import pyfakefs.tests.import_as_example
 import pyfakefs.tests.logsio
-from pyfakefs import fake_filesystem_unittest, fake_filesystem
+from pyfakefs import fake_filesystem, fake_filesystem_unittest
 from pyfakefs.fake_filesystem import OSType
 from pyfakefs.fake_filesystem_unittest import (
     Patcher,
+    PatchMode,
     Pause,
     patchfs,
-    PatchMode,
 )
 from pyfakefs.helpers import IS_PYPY
 from pyfakefs.tests.fixtures import module_with_attributes
@@ -85,11 +85,14 @@ class TestPatcher(TestCase):
     def test_nested_invocation_with_args(self):
         with Patcher() as patcher:
             patcher.fs.create_file("/foo/bar", contents="test")
-            with self.assertWarnsRegex(
-                UserWarning, "Nested fake filesystem invocation using custom arguments"
+            with (
+                self.assertWarnsRegex(
+                    UserWarning,
+                    "Nested fake filesystem invocation using custom arguments",
+                ),
+                Patcher(allow_root_user=False),
             ):
-                with Patcher(allow_root_user=False):
-                    pass
+                pass
 
 
 class TestPatchfsArgumentOrder(TestCase):
@@ -303,7 +306,7 @@ class TestAttributesWithFakeModuleNames(TestPyfakefsUnittestBase):
         self.assertEqual(module_with_attributes.io, "io attribute value")
 
 
-import math as path  # noqa: E402 wanted import not at top
+import math as path
 
 
 class TestPathNotPatchedIfNotOsPath(TestPyfakefsUnittestBase):

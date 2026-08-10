@@ -21,17 +21,17 @@ import stat
 import sys
 import unittest
 
-from pyfakefs import fake_filesystem, fake_os, fake_open, fake_file
+from pyfakefs import fake_file, fake_filesystem, fake_open, fake_os
 from pyfakefs.fake_filesystem import (
     FakeFileOpen,
     is_root,
-    set_uid,
     set_gid,
+    set_uid,
 )
-from pyfakefs.helpers import IN_DOCKER, IS_PYPY, get_uid, get_gid, reset_ids, IS_WIN
+from pyfakefs.helpers import IN_DOCKER, IS_PYPY, IS_WIN, get_gid, get_uid, reset_ids
 from pyfakefs.tests.test_utils import (
-    TestCase,
     RealFsTestCase,
+    TestCase,
     skip_if_symlink_not_supported,
 )
 

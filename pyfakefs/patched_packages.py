@@ -22,7 +22,7 @@ try:
     import pandas as pd
 
     try:
-        import pandas.io.parsers as parsers
+        from pandas.io import parsers
     except ImportError:
         parsers = None
 except ImportError:

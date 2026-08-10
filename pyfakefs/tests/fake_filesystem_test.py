@@ -30,20 +30,20 @@ try:
 except ImportError:
     pytest = None
 
-from pyfakefs import fake_filesystem, fake_os, fake_open
+from pyfakefs import fake_filesystem, fake_open, fake_os
 from pyfakefs.fake_filesystem import (
-    set_uid,
-    set_gid,
+    OSType,
     is_root,
     reset_ids,
-    OSType,
+    set_gid,
+    set_uid,
 )
 from pyfakefs.helpers import IS_WIN, IS_PYPY
 from pyfakefs.tests.test_utils import (
-    TestCase,
     RealFsTestCase,
-    time_mock,
+    TestCase,
     skip_if_symlink_not_supported,
+    time_mock,
 )
 
 

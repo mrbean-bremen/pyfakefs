@@ -92,42 +92,40 @@ import random
 import sys
 import tempfile
 import weakref
-from collections import namedtuple, OrderedDict
+from collections import OrderedDict, namedtuple
+from collections.abc import Callable
 from doctest import TestResults
 from enum import Enum
-
 from stat import (
-    S_IFREG,
     S_IFDIR,
-    S_ISLNK,
-    S_IFMT,
-    S_ISDIR,
     S_IFLNK,
+    S_IFMT,
+    S_IFREG,
+    S_ISDIR,
+    S_ISLNK,
     S_ISREG,
 )
 from typing import (
-    Any,
-    cast,
-    AnyStr,
-    overload,
-    NoReturn,
     TYPE_CHECKING,
+    Any,
+    AnyStr,
+    NoReturn,
+    cast,
+    overload,
 )
 
-from collections.abc import Callable
-
-from pyfakefs import fake_file, fake_path, fake_io, fake_os, helpers, fake_open
-from pyfakefs.fake_file import AnyFileWrapper, AnyFile
+from pyfakefs import fake_file, fake_io, fake_open, fake_os, fake_path, helpers
+from pyfakefs.fake_file import AnyFile, AnyFileWrapper
 from pyfakefs.helpers import (
-    is_int_type,
-    make_string_path,
-    to_string,
-    matching_string,
+    POSIX_PROPERTIES,
+    WINDOWS_PROPERTIES,
     AnyPath,
     AnyString,
-    WINDOWS_PROPERTIES,
-    POSIX_PROPERTIES,
     FSType,
+    is_int_type,
+    make_string_path,
+    matching_string,
+    to_string,
 )
 
 if TYPE_CHECKING:
@@ -2567,7 +2565,7 @@ class FakeFilesystem:
         Raises:
             PackageNotFoundError: if the package with the given name is not found
         """
-        from importlib.metadata import distribution, PackageNotFoundError
+        from importlib.metadata import PackageNotFoundError, distribution
 
         # we have to pause patching to get the distribution
         # from the real filesystem if we are in patch mode
@@ -3291,6 +3289,7 @@ class FakeFilesystem:
 
 def _run_doctest() -> TestResults:
     import doctest
+
     import pyfakefs
 
     return doctest.testmod(pyfakefs.fake_filesystem)

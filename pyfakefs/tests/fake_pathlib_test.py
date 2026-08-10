@@ -30,8 +30,8 @@ from collections import namedtuple
 from unittest import mock
 from unittest.mock import patch
 
-from pyfakefs import fake_pathlib, fake_filesystem, fake_filesystem_unittest, fake_os
-from pyfakefs.fake_filesystem import OSType, FakeFilesystem
+from pyfakefs import fake_filesystem, fake_filesystem_unittest, fake_os, fake_pathlib
+from pyfakefs.fake_filesystem import FakeFilesystem, OSType
 from pyfakefs.fake_pathlib import FakePathlibModule
 from pyfakefs.helpers import IS_PYPY, is_root
 from pyfakefs.tests.skipped_pathlib import (

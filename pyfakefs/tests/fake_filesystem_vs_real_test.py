@@ -22,7 +22,7 @@ import tempfile
 import time
 import unittest
 
-from pyfakefs import fake_filesystem, fake_os, fake_open
+from pyfakefs import fake_filesystem, fake_open, fake_os
 from pyfakefs.tests.test_utils import skip_if_symlink_not_supported
 
 
@@ -190,32 +190,14 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
         # is almost always different because of the file paths.
         if _error_class(real_err) != _error_class(fake_err):
             if real_err is None:
-                return "{}: real version returned {}, fake raised {}".format(
-                    method_call,
-                    real_value,
-                    _error_class(fake_err),
-                )
+                return f"{method_call}: real version returned {real_value}, fake raised {_error_class(fake_err)}"
             if fake_err is None:
-                return "{}: real version raised {}, fake returned {}".format(
-                    method_call,
-                    _error_class(real_err),
-                    fake_value,
-                )
-            return "{}: real version raised {}, fake raised {}".format(
-                method_call,
-                _error_class(real_err),
-                _error_class(fake_err),
-            )
+                return f"{method_call}: real version raised {_error_class(real_err)}, fake returned {fake_value}"
+            return f"{method_call}: real version raised {_error_class(real_err)}, fake raised {_error_class(fake_err)}"
         real_errno = _get_errno(real_err)
         fake_errno = _get_errno(fake_err)
         if real_errno != fake_errno:
-            return "{}({}): both raised {}, real errno {}, fake errno {}".format(
-                method_name,
-                path,
-                _error_class(real_err),
-                real_errno,
-                fake_errno,
-            )
+            return f"{method_name}({path}): both raised {_error_class(real_err)}, real errno {real_errno}, fake errno {fake_errno}"
         # If the method is supposed to return a full path AND both values
         # begin with the expected full path, then trim it off.
         if method_returns_path:
@@ -228,10 +210,8 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
                 real_value = real_value[len(self.real_base) :]
                 fake_value = fake_value[len(self.fake_base) :]
         if real_value != fake_value:
-            return "{}: real return {}, fake returned {}".format(
-                method_call,
-                real_value,
-                fake_value,
+            return (
+                f"{method_call}: real return {real_value}, fake returned {fake_value}"
             )
         return None
 
@@ -484,10 +464,7 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
             )
 
         if not is_exception_equal:
-            msg = "Behaviors don't match on open with args {} & kwargs {}.\n".format(
-                args,
-                kwargs,
-            )
+            msg = f"Behaviors don't match on open with args {args} & kwargs {kwargs}.\n"
             real_err_msg = "Real open results in: %s\n" % repr(real_err)
             fake_err_msg = "Fake open results in: %s\n" % repr(fake_err)
             self.fail(msg + real_err_msg + fake_err_msg)

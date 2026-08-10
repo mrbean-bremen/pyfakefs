@@ -51,30 +51,36 @@ import tokenize
 import unittest
 import warnings
 import weakref
+from collections.abc import Callable, ItemsView, Iterator, Sequence
 from importlib import reload
 from importlib.abc import Loader, MetaPathFinder
 from importlib.machinery import ModuleSpec
-from importlib.util import spec_from_file_location, module_from_spec
-from types import ModuleType, TracebackType, FunctionType
+from importlib.util import module_from_spec, spec_from_file_location
+from types import FunctionType, ModuleType, TracebackType
 from typing import (
     Any,
     Optional,
     cast,
 )
-
-from collections.abc import Callable, Iterator, ItemsView, Sequence
 from unittest import TestSuite
 
-from pyfakefs import fake_filesystem, fake_io, fake_os, fake_open, fake_path, fake_file
-from pyfakefs import fake_filesystem_shutil
-from pyfakefs import fake_pathlib
-from pyfakefs import mox3_stubout
+from pyfakefs import (
+    fake_file,
+    fake_filesystem,
+    fake_filesystem_shutil,
+    fake_io,
+    fake_open,
+    fake_os,
+    fake_path,
+    fake_pathlib,
+    mox3_stubout,
+)
 from pyfakefs.fake_filesystem import (
-    set_uid,
-    set_gid,
-    reset_ids,
-    PatchMode,
     FakeFilesystem,
+    PatchMode,
+    reset_ids,
+    set_gid,
+    set_uid,
 )
 from pyfakefs.fake_os import use_original_os
 from pyfakefs.helpers import IS_PYPY, IS_WIN
@@ -554,9 +560,9 @@ class Patcher:
         SKIPMODULES.add(nt)
         SKIPMODULES.add(ntpath)
     else:
+        import fcntl
         import posix
         import posixpath
-        import fcntl
 
         SKIPMODULES.add(posix)
         SKIPMODULES.add(posixpath)
@@ -725,10 +731,10 @@ class Patcher:
 
         if use_known_patches:
             from pyfakefs.patched_packages import (
-                get_modules_to_patch,
                 get_classes_to_patch,
-                get_fake_module_classes,
                 get_cleanup_handlers,
+                get_fake_module_classes,
+                get_modules_to_patch,
             )
 
             modules_to_patch = modules_to_patch or {}
@@ -1250,7 +1256,7 @@ class Pause:
         self._fs.pause()
         return self._fs
 
-    def __exit__(self, *args: Any) -> None:
+    def __exit__(self, *args: object) -> None:
         self._fs.resume()
 
 

@@ -24,48 +24,47 @@ import inspect
 import os
 import sys
 import uuid
+from collections.abc import Callable
 from contextlib import contextmanager
 from stat import (
     S_IFREG,
     S_IFSOCK,
 )
 from typing import (
-    Any,
-    cast,
-    AnyStr,
     TYPE_CHECKING,
+    Any,
+    AnyStr,
+    cast,
 )
 
-from collections.abc import Callable
-
 from pyfakefs.fake_file import (
+    AnyFileWrapper,
     FakeDirectory,
     FakeDirWrapper,
-    StandardStreamWrapper,
+    FakeFile,
     FakeFileWrapper,
     FakePipeWrapper,
-    FakeFile,
-    AnyFileWrapper,
+    StandardStreamWrapper,
 )
 from pyfakefs.fake_open import FakeFileOpen, _OpenModes
 from pyfakefs.fake_path import FakePathModule
-from pyfakefs.fake_scandir import scandir, walk, ScanDirIter
+from pyfakefs.fake_scandir import ScanDirIter, scandir, walk
 from pyfakefs.helpers import (
+    IS_PYPY,
+    PERM_DEF,
+    PERM_EXE,
+    AnyString,
     FakeStatResult,
+    get_gid,
+    get_uid,
+    is_byte_string,
     is_called_from_skipped_module,
     is_int_type,
-    is_byte_string,
-    make_string_path,
-    IS_PYPY,
-    to_string,
-    matching_string,
-    AnyString,
-    to_bytes,
-    PERM_EXE,
-    PERM_DEF,
     is_root,
-    get_uid,
-    get_gid,
+    make_string_path,
+    matching_string,
+    to_bytes,
+    to_string,
 )
 
 if TYPE_CHECKING:

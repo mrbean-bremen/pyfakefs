@@ -231,5 +231,5 @@ if django is not None:
                 django.conf.settings.ROOT_URLCONF
             ).urls.urlpatterns
             return get_all_view_modules(all_urlpatterns)
-        except Exception:
+        except ImportError:
             return set()

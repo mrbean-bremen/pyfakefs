@@ -151,7 +151,7 @@ class FakeShutilModuleTest(RealFsTestCase):
         file_path = os.path.join(dir_path, "baz")
         self.create_file(file_path)
         with open(file_path, encoding="utf8"), self.assertRaises(OSError):
-                shutil.rmtree(dir_path)
+            shutil.rmtree(dir_path)
         self.assertTrue(os.path.exists(dir_path))
 
     def test_rmtree_non_existing_dir(self):
@@ -326,7 +326,7 @@ class FakeShutilModuleTest(RealFsTestCase):
         src_directory = self.make_path("xyzzy")
         dst_directory = self.make_path("xyzzy_copy")
         self.create_dir(src_directory)
-        self.create_dir("%s/subdir" % src_directory)
+        self.create_dir(f"{src_directory}/subdir")
         self.create_file(os.path.join(src_directory, "subfile"))
         self.assertTrue(os.path.exists(src_directory))
         self.assertFalse(os.path.exists(dst_directory))

@@ -31,8 +31,8 @@ from enum import Enum
 from stat import S_IFLNK
 from typing import Any, AnyStr, Union, cast, overload
 
-AnyString = Union[str, bytes]
-AnyPath = Union[AnyStr, os.PathLike]
+AnyString = str | bytes
+AnyPath = Union[AnyStr, os.PathLike]  # noqa: UP007
 
 IS_PYPY = platform.python_implementation() == "PyPy"
 IS_WIN = sys.platform == "win32"
@@ -552,10 +552,8 @@ def is_called_from_skipped_module(
         caller_module_name = caller_module_name.replace(os.sep, ".")
 
         if any(
-            [
-                caller_module_name == sn or caller_module_name.endswith("." + sn)
-                for sn in skip_names
-            ]
+            caller_module_name == sn or caller_module_name.endswith("." + sn)
+            for sn in skip_names
         ):
             return True
     return False

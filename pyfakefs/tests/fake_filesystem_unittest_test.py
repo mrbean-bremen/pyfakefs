@@ -588,8 +588,8 @@ class NoRootUserTest(fake_filesystem_unittest.TestCase):
         file_path = "/baz"
         self.fs.create_file(file_path)
         os.chmod(file_path, 0o400)
-        with self.assertRaises(OSError):
-            open(file_path, "w", encoding="utf8")
+        with self.assertRaises(OSError), open(file_path, "w", encoding="utf8"):
+            pass
 
 
 class PauseResumeTest(fake_filesystem_unittest.TestCase):
@@ -597,73 +597,69 @@ class PauseResumeTest(fake_filesystem_unittest.TestCase):
         self.setUpPyfakefs()
 
     def test_pause_resume(self):
-        fake_temp_file = tempfile.NamedTemporaryFile()
-        self.assertTrue(self.fs.exists(fake_temp_file.name))
-        self.assertTrue(os.path.exists(fake_temp_file.name))
-        self.pause()
-        self.assertTrue(self.fs.exists(fake_temp_file.name))
-        self.assertFalse(os.path.exists(fake_temp_file.name))
-        real_temp_file = tempfile.NamedTemporaryFile()
-        self.assertFalse(self.fs.exists(real_temp_file.name))
-        self.assertTrue(os.path.exists(real_temp_file.name))
-        self.resume()
-        self.assertFalse(os.path.exists(real_temp_file.name))
-        self.assertTrue(os.path.exists(fake_temp_file.name))
-        self.pause()
-        real_temp_file.close()
-        self.resume()
+        with tempfile.NamedTemporaryFile() as fake_temp_file:
+            self.assertTrue(self.fs.exists(fake_temp_file.name))
+            self.assertTrue(os.path.exists(fake_temp_file.name))
+            self.pause()
+            self.assertTrue(self.fs.exists(fake_temp_file.name))
+            self.assertFalse(os.path.exists(fake_temp_file.name))
+            with tempfile.NamedTemporaryFile() as real_temp_file:
+                self.assertFalse(self.fs.exists(real_temp_file.name))
+                self.assertTrue(os.path.exists(real_temp_file.name))
+                self.resume()
+                self.assertFalse(os.path.exists(real_temp_file.name))
+                self.assertTrue(os.path.exists(fake_temp_file.name))
+                self.pause()
+            self.resume()
 
     def test_pause_resume_fs(self):
-        fake_temp_file = tempfile.NamedTemporaryFile()
-        self.assertTrue(self.fs.exists(fake_temp_file.name))
-        self.assertTrue(os.path.exists(fake_temp_file.name))
-        # resume does nothing if not paused
-        self.fs.resume()
-        self.assertTrue(os.path.exists(fake_temp_file.name))
-        self.fs.pause()
-        self.assertTrue(self.fs.exists(fake_temp_file.name))
-        self.assertFalse(os.path.exists(fake_temp_file.name))
-        real_temp_file = tempfile.NamedTemporaryFile()
-        self.assertFalse(self.fs.exists(real_temp_file.name))
-        self.assertTrue(os.path.exists(real_temp_file.name))
-        # pause does nothing if already paused
-        self.fs.pause()
-        self.assertFalse(self.fs.exists(real_temp_file.name))
-        self.assertTrue(os.path.exists(real_temp_file.name))
-        self.fs.resume()
-        self.assertFalse(os.path.exists(real_temp_file.name))
-        self.assertTrue(os.path.exists(fake_temp_file.name))
-        self.fs.pause()
-        real_temp_file.close()
-        self.fs.resume()
+        with tempfile.NamedTemporaryFile() as fake_temp_file:
+            self.assertTrue(self.fs.exists(fake_temp_file.name))
+            self.assertTrue(os.path.exists(fake_temp_file.name))
+            # resume does nothing if not paused
+            self.fs.resume()
+            self.assertTrue(os.path.exists(fake_temp_file.name))
+            self.fs.pause()
+            self.assertTrue(self.fs.exists(fake_temp_file.name))
+            self.assertFalse(os.path.exists(fake_temp_file.name))
+            with tempfile.NamedTemporaryFile() as real_temp_file:
+                self.assertFalse(self.fs.exists(real_temp_file.name))
+                self.assertTrue(os.path.exists(real_temp_file.name))
+                # pause does nothing if already paused
+                self.fs.pause()
+                self.assertFalse(self.fs.exists(real_temp_file.name))
+                self.assertTrue(os.path.exists(real_temp_file.name))
+                self.fs.resume()
+                self.assertFalse(os.path.exists(real_temp_file.name))
+                self.assertTrue(os.path.exists(fake_temp_file.name))
+                self.fs.pause()
+            self.fs.resume()
 
     def test_pause_resume_contextmanager(self):
-        fake_temp_file = tempfile.NamedTemporaryFile()
-        self.assertTrue(self.fs.exists(fake_temp_file.name))
-        self.assertTrue(os.path.exists(fake_temp_file.name))
-        with Pause(self):
+        with tempfile.NamedTemporaryFile() as fake_temp_file:
             self.assertTrue(self.fs.exists(fake_temp_file.name))
-            self.assertFalse(os.path.exists(fake_temp_file.name))
-            real_temp_file = tempfile.NamedTemporaryFile()
-            self.assertFalse(self.fs.exists(real_temp_file.name))
-            self.assertTrue(os.path.exists(real_temp_file.name))
-            real_temp_file.close()
-        self.assertFalse(os.path.exists(real_temp_file.name))
-        self.assertTrue(os.path.exists(fake_temp_file.name))
+            self.assertTrue(os.path.exists(fake_temp_file.name))
+            with Pause(self):
+                self.assertTrue(self.fs.exists(fake_temp_file.name))
+                self.assertFalse(os.path.exists(fake_temp_file.name))
+                with tempfile.NamedTemporaryFile() as real_temp_file:
+                    self.assertFalse(self.fs.exists(real_temp_file.name))
+                    self.assertTrue(os.path.exists(real_temp_file.name))
+            self.assertFalse(os.path.exists(real_temp_file.name))
+            self.assertTrue(os.path.exists(fake_temp_file.name))
 
     def test_pause_resume_fs_contextmanager(self):
-        fake_temp_file = tempfile.NamedTemporaryFile()
-        self.assertTrue(self.fs.exists(fake_temp_file.name))
-        self.assertTrue(os.path.exists(fake_temp_file.name))
-        with Pause(self.fs):
+        with tempfile.NamedTemporaryFile() as fake_temp_file:
             self.assertTrue(self.fs.exists(fake_temp_file.name))
-            self.assertFalse(os.path.exists(fake_temp_file.name))
-            real_temp_file = tempfile.NamedTemporaryFile()
-            self.assertFalse(self.fs.exists(real_temp_file.name))
-            self.assertTrue(os.path.exists(real_temp_file.name))
-            real_temp_file.close()
-        self.assertFalse(os.path.exists(real_temp_file.name))
-        self.assertTrue(os.path.exists(fake_temp_file.name))
+            self.assertTrue(os.path.exists(fake_temp_file.name))
+            with Pause(self.fs):
+                self.assertTrue(self.fs.exists(fake_temp_file.name))
+                self.assertFalse(os.path.exists(fake_temp_file.name))
+                with tempfile.NamedTemporaryFile() as real_temp_file:
+                    self.assertFalse(self.fs.exists(real_temp_file.name))
+                    self.assertTrue(os.path.exists(real_temp_file.name))
+            self.assertFalse(os.path.exists(real_temp_file.name))
+            self.assertTrue(os.path.exists(fake_temp_file.name))
 
     def test_pause_resume_without_patcher(self):
         fs = fake_filesystem.FakeFilesystem()
@@ -681,38 +677,34 @@ class PauseResumeTest(fake_filesystem_unittest.TestCase):
 class PauseResumePatcherTest(fake_filesystem_unittest.TestCase):
     def test_pause_resume(self):
         with Patcher() as p:
-            fake_temp_file = tempfile.NamedTemporaryFile()
-            self.assertTrue(p.fs.exists(fake_temp_file.name))
-            self.assertTrue(os.path.exists(fake_temp_file.name))
-            p.pause()
-            self.assertTrue(p.fs.exists(fake_temp_file.name))
-            self.assertFalse(os.path.exists(fake_temp_file.name))
-            real_temp_file = tempfile.NamedTemporaryFile()
-            self.assertFalse(p.fs.exists(real_temp_file.name))
-            self.assertTrue(os.path.exists(real_temp_file.name))
-            p.resume()
-            self.assertFalse(os.path.exists(real_temp_file.name))
-            self.assertTrue(os.path.exists(fake_temp_file.name))
-            fake_temp_file.close()
-            p.pause()
-            real_temp_file.close()
+            with tempfile.NamedTemporaryFile() as fake_temp_file:
+                self.assertTrue(p.fs.exists(fake_temp_file.name))
+                self.assertTrue(os.path.exists(fake_temp_file.name))
+                p.pause()
+                self.assertTrue(p.fs.exists(fake_temp_file.name))
+                self.assertFalse(os.path.exists(fake_temp_file.name))
+                with tempfile.NamedTemporaryFile() as real_temp_file:
+                    self.assertFalse(p.fs.exists(real_temp_file.name))
+                    self.assertTrue(os.path.exists(real_temp_file.name))
+                    p.resume()
+                    self.assertFalse(os.path.exists(real_temp_file.name))
+                    self.assertTrue(os.path.exists(fake_temp_file.name))
+                    fake_temp_file.close()
+                    p.pause()
             p.resume()
 
     def test_pause_resume_contextmanager(self):
-        with Patcher() as p:
-            fake_temp_file = tempfile.NamedTemporaryFile()
+        with Patcher() as p, tempfile.NamedTemporaryFile() as fake_temp_file:
             self.assertTrue(p.fs.exists(fake_temp_file.name))
             self.assertTrue(os.path.exists(fake_temp_file.name))
             with Pause(p):
                 self.assertTrue(p.fs.exists(fake_temp_file.name))
                 self.assertFalse(os.path.exists(fake_temp_file.name))
-                real_temp_file = tempfile.NamedTemporaryFile()
-                self.assertFalse(p.fs.exists(real_temp_file.name))
-                self.assertTrue(os.path.exists(real_temp_file.name))
-                real_temp_file.close()
+                with tempfile.NamedTemporaryFile() as real_temp_file:
+                    self.assertFalse(p.fs.exists(real_temp_file.name))
+                    self.assertTrue(os.path.exists(real_temp_file.name))
             self.assertFalse(os.path.exists(real_temp_file.name))
             self.assertTrue(os.path.exists(fake_temp_file.name))
-            fake_temp_file.close()
 
 
 class TestPyfakefsTestCase(unittest.TestCase):
@@ -976,8 +968,8 @@ class TestOtherFS(fake_filesystem_unittest.TestCase):
     def test_tempfile_access(self):
         # regression test for #912
         self.fs.os = OSType.LINUX
-        tmp_file = tempfile.TemporaryFile()
-        assert tmp_file
+        with tempfile.TemporaryFile() as f:
+            assert f
 
 
 @unittest.skipIf(sys.platform != "win32", "Windows-specific behavior")

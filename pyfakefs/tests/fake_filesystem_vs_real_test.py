@@ -39,6 +39,7 @@ def _get_errno(raised_error):
             return raised_error.errno
         except AttributeError:
             pass
+    return None
 
 
 class FakeFilesystemVsRealTest(unittest.TestCase):
@@ -63,20 +64,17 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
             os.mkdir(real_path)
             self.fake_os.mkdir(fake_path)
         if file_type == "f":
-            fh = open(real_path, "w", encoding="utf8")
-            fh.write(contents or "")
-            fh.close()
+            with open(real_path, "w", encoding="utf8") as fh:
+                fh.write(contents or "")
             fh = self.fake_open(fake_path, "w", encoding="utf8")
             fh.write(contents or "")
             fh.close()
         # b for binary file
         if file_type == "b":
-            fh = open(real_path, "wb")
-            fh.write(contents or "")
-            fh.close()
-            fh = self.fake_open(fake_path, "wb")
-            fh.write(contents or "")
-            fh.close()
+            with open(real_path, "wb") as fh:
+                fh.write(contents or "")
+            with self.fake_open(fake_path, "wb") as fh:
+                fh.write(contents or "")
         # l for symlink, h for hard link
         if file_type in ("l", "h"):
             contents = sep(contents)
@@ -96,7 +94,7 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
         # Base paths in the real and test file systems. We keep them different
         # so that missing features in the fake don't fall through to the base
         # operations and magically succeed.
-        tsname = "fakefs.%s" % time.time()
+        tsname = f"fakefs.{time.time()}"
         self.cwd = os.getcwd()
         # Fully expand the base_path - required on OS X.
         self.real_base = os.path.realpath(os.path.join(tempfile.gettempdir(), tsname))
@@ -132,8 +130,7 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
                     except OSError as e:
                         if "Directory not empty" in e:
                             self.fail(
-                                "Real path %s not empty: %s : %s"
-                                % (real_path, e, os.listdir(real_path))
+                                f"Real path {real_path} not empty: {e} : {os.listdir(real_path)}"
                             )
                         else:
                             raise
@@ -200,15 +197,14 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
             return f"{method_name}({path}): both raised {_error_class(real_err)}, real errno {real_errno}, fake errno {fake_errno}"
         # If the method is supposed to return a full path AND both values
         # begin with the expected full path, then trim it off.
-        if method_returns_path:
-            if (
-                real_value
-                and fake_value
-                and real_value.startswith(self.real_base)
-                and fake_value.startswith(self.fake_base)
-            ):
-                real_value = real_value[len(self.real_base) :]
-                fake_value = fake_value[len(self.fake_base) :]
+        if method_returns_path and (
+            real_value
+            and fake_value
+            and real_value.startswith(self.real_base)
+            and fake_value.startswith(self.fake_base)
+        ):
+            real_value = real_value[len(self.real_base) :]
+            fake_value = fake_value[len(self.fake_base) :]
         if real_value != fake_value:
             return (
                 f"{method_call}: real return {real_value}, fake returned {fake_value}"
@@ -229,7 +225,7 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
                 fake_value = result.decode()
             else:
                 fake_value = str(result)
-        except Exception as e:  # pylint: disable-msg=W0703
+        except Exception as e:  # noqa: BLE001
             fake_err = e
         return fake_err, fake_value
 
@@ -237,7 +233,6 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
     def _get_real_value(method_name, path, real):
         real_value = None
         real_err = None
-        # Catching Exception below gives a lint warning, but it's what we need.
         try:
             args = [] if path == () else [path]
             real_method = real
@@ -248,7 +243,7 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
                 real_value = result.decode()
             else:
                 real_value = str(result)
-        except Exception as e:  # pylint: disable-msg=W0703
+        except Exception as e:  # noqa: BLE001
             real_err = e
         return real_err, real_value
 
@@ -299,11 +294,13 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
         kwargs = {}
         if "b" not in mode:
             kwargs["encoding"] = "utf8"
-        with open(path, mode, **kwargs) as real_fh:
-            with self.fake_open(path, mode, **kwargs) as fake_fh:
-                return self._compare_behaviors(
-                    method_name, data, real_fh, fake_fh, method_returns_data
-                )
+        with (
+            open(path, mode, **kwargs) as real_fh,
+            self.fake_open(path, mode, **kwargs) as fake_fh,
+        ):
+            return self._compare_behaviors(
+                method_name, data, real_fh, fake_fh, method_returns_data
+            )
 
     def diff_os_path_method_behavior(
         self, method_name, path, method_returns_path=False
@@ -402,8 +399,7 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
                 differences.append(diff)
         if differences:
             self.fail(
-                "Behaviors do not match for %s:\n    %s"
-                % (path, "\n    ".join(differences))
+                f"Behaviors do not match for {path}:\n    " + "\n    ".join(differences)
             )
 
     def assertFileHandleBehaviorsMatch(self, path, mode, data):
@@ -422,8 +418,7 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
                 differences.append(diff)
         if differences:
             self.fail(
-                "Behaviors do not match for %s:\n    %s"
-                % (path, "\n    ".join(differences))
+                f"Behaviors do not match for {path}:\n    " + "\n    ".join(differences)
             )
 
     def assertFileHandleOpenBehaviorsMatch(self, *args, **kwargs):
@@ -446,13 +441,13 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
         try:
             with open(*args, **kwargs):
                 pass
-        except Exception as e:  # pylint: disable-msg=W0703
+        except Exception as e:  # noqa: BLE001
             real_err = e
 
         try:
             with self.fake_open(*args, **kwargs):
                 pass
-        except Exception as e:  # pylint: disable-msg=W0703
+        except Exception as e:  # noqa: BLE001
             fake_err = e
 
         # default equal in case one is None and other is not.
@@ -465,8 +460,8 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
 
         if not is_exception_equal:
             msg = f"Behaviors don't match on open with args {args} & kwargs {kwargs}.\n"
-            real_err_msg = "Real open results in: %s\n" % repr(real_err)
-            fake_err_msg = "Fake open results in: %s\n" % repr(fake_err)
+            real_err_msg = f"Real open results in: {real_err}\n"
+            fake_err_msg = f"Fake open results in: {fake_err}\n"
             self.fail(msg + real_err_msg + fake_err_msg)
 
     # Helpers for checks which are not straight method calls.
@@ -478,7 +473,7 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
         return self.fake_os.access(path, os.R_OK)
 
     def _stat_result_real(self, path, prop, support_dir=True):
-        real_path, unused_fake_path = self._paths(path)
+        real_path, _ = self._paths(path)
         # fake_filesystem.py does not implement stat().st_size for directories
         if not support_dir and os.path.isdir(real_path):
             return None
@@ -491,26 +486,26 @@ class FakeFilesystemVsRealTest(unittest.TestCase):
         return getattr(self.fake_os.stat(fake_path), prop)
 
     def _lstat_size_real(self, path):
-        real_path, unused_fake_path = self._paths(path)
+        real_path, _ = self._paths(path)
         if os.path.isdir(real_path):
             return None
         size = os.lstat(real_path).st_size
         # Account for the difference in the lengths of the absolute paths.
-        if os.path.islink(real_path):
-            if os.readlink(real_path).startswith(os.sep):
-                size -= len(self.real_base)
+        if os.path.islink(real_path) and os.readlink(real_path).startswith(os.sep):
+            size -= len(self.real_base)
         return size
 
     def _lstat_size_fake(self, path):
-        unused_real_path, fake_path = self._paths(path)
+        _, fake_path = self._paths(path)
         # size = 0
         if self.fake_os.path.isdir(fake_path):
             return None
         size = self.fake_os.lstat(fake_path).st_size
         # Account for the difference in the lengths of the absolute paths.
-        if self.fake_os.path.islink(fake_path):
-            if self.fake_os.readlink(fake_path).startswith(os.sep):
-                size -= len(self.fake_base)
+        if self.fake_os.path.islink(fake_path) and self.fake_os.readlink(
+            fake_path
+        ).startswith(os.sep):
+            size -= len(self.fake_base)
         return size
 
     def test_isabs(self):

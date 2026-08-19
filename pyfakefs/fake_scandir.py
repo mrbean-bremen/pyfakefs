@@ -145,7 +145,7 @@ class ScanDirIter:
                 .path  # pytype:disable=attribute-error
             )
             self.path = ""
-            self.entry_iter = iter(tuple())
+            self.entry_iter = iter(())
         else:
             if path is None:
                 path = "."

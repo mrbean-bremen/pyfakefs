@@ -20,6 +20,8 @@ The released versions correspond to PyPI releases.
   (see [#1331](https://github.com/pytest-dev/pyfakefs/issues/1331))
 * fixed cross-device hard links incorrectly succeeding
   (see [#1337](https://github.com/pytest-dev/pyfakefs/issues/1337))
+* fixed resolving Windows drive-relative paths
+  (see [#1324](https://github.com/pytest-dev/pyfakefs/issues/1324))
 
 ## [Version 6.2.0](https://pypi.python.org/pypi/pyfakefs/6.2.0) (2026-04-12)
 
